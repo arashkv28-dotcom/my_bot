@@ -52,7 +52,7 @@ export default async function handler(req, res) {
   // ----------------------------------------------------
   if (message.text && !isExempt) {
     const text = message.text;
-    const badWords = ["احمق", "سس خرسی", "کس", "کون", "کیر", "کوس", "کوص", "کسکش", "کوسکش", "کوصکش", "جنده", "fuck", "شاشزاده"]; 
+    const badWords = ["جاکش", "سس خرسی", "کس", "کون", "کیر", "کوس", "کوص", "کسکش", "کوسکش", "کوصکش", "جنده", "fuck", "شاشزاده"]; 
     const hasBadWord = badWords.some(word => text.includes(word));
     const linkRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,})|(@[a-zA-Z0-9_]+)/i;
     const hasLink = linkRegex.test(text);
