@@ -37,7 +37,7 @@ export default async function handler(req, res) {
     const text = message.text;
     
     // کلمات ممنوعه خود را اینجا بنویسید
-    const badWordsRaw = ["احمق", "بیشعور", "کلاهبرداری"]; 
+    const badWordsRaw = ["شاشزاده","کون", "کص", "سس خرسی", "تام مورلی", "کسکش", "کوسکش", "کوصکش", "کصکش", "کیر", "کوس"]; 
     
     // فیلتر امنیتی: حذف فاصله‌های خالی و اشتباهات تایپی شما در آرایه
     const badWords = badWordsRaw.filter(w => w.trim().length > 1);
