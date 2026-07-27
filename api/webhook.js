@@ -32,52 +32,62 @@ export default async function handler(req, res) {
   // ==========================================
   // 🎨 بخش ویژه: مبدل نستعلیق (با سیستم آپلود فایل)
   // ==========================================
-  if (message.text && (message.text.startsWith("/font") || message.text.startsWith("نستعلیق"))) {
-    let userText = message.text.replace("/font", "").replace("نستعلیق", "").trim();
     
-    if (userText.length > 0) {
-      // ارسال پیام انتظار
-      await tgApi('sendMessage', { 
-        chat_id: chatId, 
-        text: "⏳ در حال کشیدن نقاشی، لطفاً کمی صبر کنید...",
-        reply_to_message_id: messageId
+  if (message.text && message.text.startsWith('نستعلیق ')) {
+    const persianText = message.text.replace('نستعلیق ', '').trim();
+    
+    if (persianText.length === 0) {
+      await tgApi('sendMessage', {
+        chat_id: chatId,
+        text: '⚠️ لطفاً بعد از کلمه "نستعلیق" متن خود را بنویسید.\nمثال: نستعلیق سلام دوستان'
       });
+      return res.status(200).send('OK');
+    }
 
-      const photoUrl = `https://api.codebazan.ir/nastaliq/?text=${encodeURIComponent(userText)}`;
+    // ارسال پیام انتظار
+    await tgApi('sendMessage', {
+      chat_id: chatId,
+      text: '⏳ در حال ساخت تصویر نستعلیق...'
+    });
+
+    try {
+      // استفاده از API ایرانی نستعلیق
+      const encodedText = encodeURIComponent(persianText);
+      const imageUrl = `https://api.codebazan.ir/nastaliq/?text=${encodedText}`;
       
-      try {
-        // مرحله 1: ورسل عکس را از سایت ایرانی دانلود می‌کند
-        const imageResponse = await fetch(photoUrl);
-        const imageBuffer = await imageResponse.arrayBuffer();
-
-        // مرحله 2: تبدیل به فایلی که تلگرام بفهمد
+      // دریافت تصویر از API
+      const imageRes = await fetch(imageUrl);
+      
+      if (imageRes.ok) {
+        // تبدیل تصویر به داده قابل ارسال
+        const imageBuffer = await imageRes.arrayBuffer();
+        const imageBytes = new Uint8Array(imageBuffer);
+        
+        // ارسال تصویر به تلگرام از طریق فرم
         const formData = new FormData();
-        formData.append('chat_id', chatId);
-        formData.append('photo', new Blob([imageBuffer], { type: 'image/png' }), 'nastaliq.png');
-        formData.append('caption', `🎨 اثر: ${message.from.first_name || "کاربر"}`);
-
-        // مرحله 3: آپلود فایل در تلگرام
-        const sendRes = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+        formData.append('chat_id', chatId.toString());
+        formData.append('caption', `✍️ ${persianText}`);
+        formData.append('photo', new Blob([imageBytes], { type: 'image/png' }), 'nastaliq.png');
+        
+        await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
           method: 'POST',
           body: formData
         });
-
-        const responseData = await sendRes.json();
-
-        // اگر آپلود موفق بود پیام‌های اضافی را پاک کن
-        if (responseData.ok) {
-          await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
-        } else {
-          await tgApi('sendMessage', { chat_id: chatId, text: `❌ تلگرام اجازه آپلود نداد.` });
-        }
-      } catch (error) {
-        await tgApi('sendMessage', { chat_id: chatId, text: `❌ ارتباط با سرور فونت قطع شد.` });
+      } else {
+        throw new Error('API error');
       }
-      
-      return res.status(200).send('OK');
+    } catch (e) {
+      // اگر API کار نکرد، لینک مستقیم را بفرست
+      const encodedText = encodeURIComponent(persianText);
+      await tgApi('sendMessage', {
+        chat_id: chatId,
+        text: `✍️ *${persianText}*\n\n🔗 [مشاهده به صورت نستعلیق](https://api.codebazan.ir/nastaliq/?text=${encodedText})`,
+        parse_mode: 'Markdown'
+      });
     }
+    
+    return res.status(200).send('OK');
   }
-
   // ==========================================
   // بخش 1: بررسی لینک و کلمات ممنوعه
   // ==========================================
