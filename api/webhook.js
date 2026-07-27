@@ -6,8 +6,7 @@ export default async function handler(req, res) {
   const chatId = message.chat.id;
   const messageId = message.message_id;
   const BOT_TOKEN = process.env.BOT_TOKEN; 
-  
-  // 🔴 لیست سفید مدیران
+
   const WHITELIST_IDS = [
     1001977073229, 1922419923, 6990025961, 96431648,  
     -1001678007720, 5443017337, 8097212518, 6604010059, 
@@ -20,7 +19,7 @@ export default async function handler(req, res) {
   const isExempt = WHITELIST_IDS.includes(userId) || WHITELIST_IDS.includes(senderChatId) || req.body.channel_post;
 
   const tgApi = async (method, body) => {
-    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/${method}`, {
+    return await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/${method}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
@@ -31,28 +30,41 @@ export default async function handler(req, res) {
   const KV_TOKEN = process.env.KV_REST_API_TOKEN;
 
   // ==========================================
-  // 🎨 بخش ویژه: مبدل نستعلیق 
+  // 🎨 بخش ویژه: مبدل نستعلیق (نسخه هوشمند)
   // ==========================================
-  if (message.text && message.text.startsWith("نستعلیق")) {
-    // جدا کردن کلمه "نستعلیق" از بقیه متن
+  if (message.text && message.text.includes("نستعلیق")) {
     const userText = message.text.replace("نستعلیق", "").trim();
     
-    // اگر کاربر متنی بعد از کلمه نستعلیق نوشته بود:
     if (userText.length > 0) {
-      // 1. پیام ساده کاربر را پاک کن
-      await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
-      
-      // 2. ساخت لینک عکس نستعلیق (با استفاده از API رایگان کدبازان)
+      // اول به کاربر می‌گوییم که پیامش را دریافت کردیم
+      await tgApi('sendMessage', { 
+        chat_id: chatId, 
+        text: "⏳ در حال ساخت عکس نستعلیق، لطفاً چند ثانیه صبر کنید...",
+        reply_to_message_id: messageId
+      });
+
+      // لینک عکس نستعلیق
       const photoUrl = `https://api.codebazan.ir/nastaliq/?text=${encodeURIComponent(userText)}`;
       
-      // 3. ارسال عکس هنری به گروه
-      await tgApi('sendPhoto', {
+      // تلاش برای ارسال عکس
+      const sendPhotoRes = await tgApi('sendPhoto', {
         chat_id: chatId,
         photo: photoUrl,
-        caption: `🎨 ارسال شده توسط: ${message.from.first_name || "کاربر"}`
+        caption: `🎨 اثر هنری برای: ${message.from.first_name || "کاربر"}`
       });
-      
-      // عملیات را همینجا تمام کن تا بقیه کدها اجرا نشوند
+
+      const responseData = await sendPhotoRes.json();
+
+      // اگر ارسال عکس موفق بود، پیام اصلی کاربر را پاک کن
+      if (responseData.ok) {
+        await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
+      } else {
+        // اگر تلگرام نتوانست عکس را دانلود کند، لینک را به صورت متن می‌فرستیم
+        await tgApi('sendMessage', { 
+          chat_id: chatId, 
+          text: `مشکلی در تلگرام پیش آمد. روی لینک زیر کلیک کنید تا عکس را ببینید:\n\n${photoUrl}`
+        });
+      }
       return res.status(200).send('OK');
     }
   }
@@ -62,8 +74,7 @@ export default async function handler(req, res) {
   // ==========================================
   if (message.text && !isExempt) {
     const text = message.text;
-    const badWordsRaw = ["شاشزاده", "کون", "کص", "سس خرسی", "تام مورلی", "کسکش", "کوسکش", "کوصکش", "کصکش", "کیر", "کوس"]; 
-     
+    const badWordsRaw = ["احمق", "بیشعور", "کلاهبرداری"]; 
     const badWords = badWordsRaw.filter(w => w.trim().length > 1);
     const hasBadWord = badWords.some(word => text.includes(word.trim()));
     const linkRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,})|(@[a-zA-Z0-9_]+)/i;
@@ -71,11 +82,6 @@ export default async function handler(req, res) {
 
     if (hasBadWord || hasLink) {
       await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
-      let reason = hasLink ? "ارسال لینک یا آیدی" : "استفاده از کلمات ممنوعه";
-      await tgApi('sendMessage', { 
-        chat_id: chatId, 
-        text: `⚠️ پیام به دلیل «${reason}» پاک شد.` 
-      });
       return res.status(200).send('OK');
     }
   }
