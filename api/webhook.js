@@ -30,49 +30,50 @@ export default async function handler(req, res) {
   const KV_TOKEN = process.env.KV_REST_API_TOKEN;
 
   // ==========================================
-  // 🎨 بخش ویژه: مبدل نستعلیق با دستور /font
+  // 🎨 بخش ویژه: مبدل نستعلیق (با سیستم آپلود فایل)
   // ==========================================
   if (message.text && (message.text.startsWith("/font") || message.text.startsWith("نستعلیق"))) {
-    // گرفتن متن جلوی دستور
     let userText = message.text.replace("/font", "").replace("نستعلیق", "").trim();
     
     if (userText.length > 0) {
-      // 1. ارسال پیام انتظار
+      // ارسال پیام انتظار
       await tgApi('sendMessage', { 
         chat_id: chatId, 
-        text: "⏳ در حال ساخت، لطفاً کمی صبر کنید...",
+        text: "⏳ در حال کشیدن نقاشی، لطفاً کمی صبر کنید...",
         reply_to_message_id: messageId
       });
 
-      // 2. ساخت لینک عکس
       const photoUrl = `https://api.codebazan.ir/nastaliq/?text=${encodeURIComponent(userText)}`;
       
-      // 3. ارسال عکس به تلگرام
-      const sendRes = await tgApi('sendPhoto', {
-        chat_id: chatId,
-        photo: photoUrl,
-        caption: `🎨 ارسال شده توسط: ${message.from.first_name || "کاربر"}`
-      });
+      try {
+        // مرحله 1: ورسل عکس را از سایت ایرانی دانلود می‌کند
+        const imageResponse = await fetch(photoUrl);
+        const imageBuffer = await imageResponse.arrayBuffer();
 
-      const responseData = await sendRes.json();
+        // مرحله 2: تبدیل به فایلی که تلگرام بفهمد
+        const formData = new FormData();
+        formData.append('chat_id', chatId);
+        formData.append('photo', new Blob([imageBuffer], { type: 'image/png' }), 'nastaliq.png');
+        formData.append('caption', `🎨 اثر: ${message.from.first_name || "کاربر"}`);
 
-      // 4. اگر عکس موفق ارسال شد، پیام اصلی را پاک کن
-      if (responseData.ok) {
-        await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
-      } else {
-        await tgApi('sendMessage', { 
-          chat_id: chatId, 
-          text: `❌ متاسفانه سایت سازنده عکس موقتاً قطع است. لینک مستقیم:\n${photoUrl}`
+        // مرحله 3: آپلود فایل در تلگرام
+        const sendRes = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+          method: 'POST',
+          body: formData
         });
+
+        const responseData = await sendRes.json();
+
+        // اگر آپلود موفق بود پیام‌های اضافی را پاک کن
+        if (responseData.ok) {
+          await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
+        } else {
+          await tgApi('sendMessage', { chat_id: chatId, text: `❌ تلگرام اجازه آپلود نداد.` });
+        }
+      } catch (error) {
+        await tgApi('sendMessage', { chat_id: chatId, text: `❌ ارتباط با سرور فونت قطع شد.` });
       }
-      return res.status(200).send('OK');
-    } else {
-      // اگر کاربر فقط نوشت /font و متنی نداد
-      await tgApi('sendMessage', { 
-        chat_id: chatId, 
-        text: "متن خود را جلوی دستور بنویسید.\nمثال: `/font سلام بچه‌ها`",
-        parse_mode: "Markdown"
-      });
+      
       return res.status(200).send('OK');
     }
   }
