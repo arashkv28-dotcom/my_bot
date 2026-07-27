@@ -7,6 +7,7 @@ export default async function handler(req, res) {
   const messageId = message.message_id;
   const BOT_TOKEN = process.env.BOT_TOKEN; 
 
+  // 🔴 لیست سفید مدیران
   const WHITELIST_IDS = [
     1001977073229, 1922419923, 6990025961, 96431648,  
     -1001678007720, 5443017337, 8097212518, 6604010059, 
@@ -30,70 +31,18 @@ export default async function handler(req, res) {
   const KV_TOKEN = process.env.KV_REST_API_TOKEN;
 
   // ==========================================
-  // 🎨 بخش ویژه: مبدل نستعلیق (با سیستم آپلود فایل)
-  // ==========================================
-    
-  if (message.text && message.text.startsWith('نستعلیق ')) {
-    const persianText = message.text.replace('نستعلیق ', '').trim();
-    
-    if (persianText.length === 0) {
-      await tgApi('sendMessage', {
-        chat_id: chatId,
-        text: '⚠️ لطفاً بعد از کلمه "نستعلیق" متن خود را بنویسید.\nمثال: نستعلیق سلام دوستان'
-      });
-      return res.status(200).send('OK');
-    }
-
-    // ارسال پیام انتظار
-    await tgApi('sendMessage', {
-      chat_id: chatId,
-      text: '⏳ در حال ساخت تصویر نستعلیق...'
-    });
-
-    try {
-      // استفاده از API ایرانی نستعلیق
-      const encodedText = encodeURIComponent(persianText);
-      const imageUrl = `https://api.codebazan.ir/nastaliq/?text=${encodedText}`;
-      
-      // دریافت تصویر از API
-      const imageRes = await fetch(imageUrl);
-      
-      if (imageRes.ok) {
-        // تبدیل تصویر به داده قابل ارسال
-        const imageBuffer = await imageRes.arrayBuffer();
-        const imageBytes = new Uint8Array(imageBuffer);
-        
-        // ارسال تصویر به تلگرام از طریق فرم
-        const formData = new FormData();
-        formData.append('chat_id', chatId.toString());
-        formData.append('caption', `✍️ ${persianText}`);
-        formData.append('photo', new Blob([imageBytes], { type: 'image/png' }), 'nastaliq.png');
-        
-        await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
-          method: 'POST',
-          body: formData
-        });
-      } else {
-        throw new Error('API error');
-      }
-    } catch (e) {
-      // اگر API کار نکرد، لینک مستقیم را بفرست
-      const encodedText = encodeURIComponent(persianText);
-      await tgApi('sendMessage', {
-        chat_id: chatId,
-        text: `✍️ *${persianText}*\n\n🔗 [مشاهده به صورت نستعلیق](https://api.codebazan.ir/nastaliq/?text=${encodedText})`,
-        parse_mode: 'Markdown'
-      });
-    }
-    
-    return res.status(200).send('OK');
-  }
-  // ==========================================
-  // بخش 1: بررسی لینک و کلمات ممنوعه
+  // بخش 1: بررسی لینک و کلمات ممنوعه (آپدیت شده)
   // ==========================================
   if (message.text && !isExempt) {
     const text = message.text;
-    const badWordsRaw = ["احمق", "بیشعور", "کلاهبرداری"]; 
+    
+    // 🔴 لیست کلمات ممنوعه شما (دقیقاً همان‌هایی که خواستید)
+    const badWordsRaw = [
+      "احمق", "بیشعور", "کلاهبرداری", "شاشزاده", "کون", "کص", 
+      "سس خرسی", "تام مورلی", "کسکش", "کوسکش", "کوصکش", "کصکش", 
+      "کیر", "کوس"
+    ]; 
+    
     const badWords = badWordsRaw.filter(w => w.trim().length > 1);
     const hasBadWord = badWords.some(word => text.includes(word.trim()));
     const linkRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,})|(@[a-zA-Z0-9_]+)/i;
@@ -101,17 +50,19 @@ export default async function handler(req, res) {
 
     if (hasBadWord || hasLink) {
       await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
+      // ربات دیگر پیام هشدار نمی‌فرستد تا گروه شلوغ نشود، فقط در سکوت پیام را پاک می‌کند
       return res.status(200).send('OK');
     }
   }
 
   // ==========================================
-  // بخش 2: سیستم ضد تکرار
+  // بخش 2: سیستم ضد تکرار (Anti-Spam)
   // ==========================================
   if (KV_URL && KV_TOKEN && !isExempt) {
     let uniqueKey = null;
 
     if (message.text) {
+      // فقط متن‌های طولانی‌تر از 15 حرف بررسی می‌شوند
       if (message.text.length > 15) {
         uniqueKey = "text_" + message.text.substring(0, 50).replace(/\s/g, '');
       }
@@ -137,6 +88,25 @@ export default async function handler(req, res) {
           headers: { Authorization: `Bearer ${KV_TOKEN}` }
         });
       }
+    }
+  }
+
+  // ==========================================
+  // بخش 3: مبدل نستعلیق (با لینک مستقیم)
+  // ==========================================
+  if (message.text && (message.text.startsWith("/font") || message.text.startsWith("نستعلیق"))) {
+    let userText = message.text.replace("/font", "").replace("نستعلیق", "").trim();
+    
+    if (userText.length > 0) {
+      const photoUrl = `https://api.codebazan.ir/nastaliq/?text=${encodeURIComponent(userText)}`;
+      
+      // چون سرور ایرانی تلگرام را مسدود کرده، لینک را به کاربر می‌دهیم تا خودش باز کند
+      await tgApi('sendMessage', { 
+        chat_id: chatId, 
+        text: `🎨 به دلیل محدودیت‌های سرور، لطفاً برای دیدن متن نستعلیق خود روی لینک زیر کلیک کنید:\n\n${photoUrl}`,
+        reply_to_message_id: messageId
+      });
+      return res.status(200).send('OK');
     }
   }
 
