@@ -31,21 +31,41 @@ export default async function handler(req, res) {
   const KV_TOKEN = process.env.KV_REST_API_TOKEN;
 
   // ==========================================
+  // 🎨 بخش ویژه: مبدل نستعلیق 
+  // ==========================================
+  if (message.text && message.text.startsWith("نستعلیق")) {
+    // جدا کردن کلمه "نستعلیق" از بقیه متن
+    const userText = message.text.replace("نستعلیق", "").trim();
+    
+    // اگر کاربر متنی بعد از کلمه نستعلیق نوشته بود:
+    if (userText.length > 0) {
+      // 1. پیام ساده کاربر را پاک کن
+      await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
+      
+      // 2. ساخت لینک عکس نستعلیق (با استفاده از API رایگان کدبازان)
+      const photoUrl = `https://api.codebazan.ir/nastaliq/?text=${encodeURIComponent(userText)}`;
+      
+      // 3. ارسال عکس هنری به گروه
+      await tgApi('sendPhoto', {
+        chat_id: chatId,
+        photo: photoUrl,
+        caption: `🎨 ارسال شده توسط: ${message.from.first_name || "کاربر"}`
+      });
+      
+      // عملیات را همینجا تمام کن تا بقیه کدها اجرا نشوند
+      return res.status(200).send('OK');
+    }
+  }
+
+  // ==========================================
   // بخش 1: بررسی لینک و کلمات ممنوعه
   // ==========================================
   if (message.text && !isExempt) {
     const text = message.text;
-    
-    // کلمات ممنوعه خود را اینجا بنویسید
     const badWordsRaw = ["شاشزاده","کون", "کص", "سس خرسی", "تام مورلی", "کسکش", "کوسکش", "کوصکش", "کصکش", "کیر", "کوس"]; 
-    
-    // فیلتر امنیتی: حذف فاصله‌های خالی و اشتباهات تایپی شما در آرایه
+     
     const badWords = badWordsRaw.filter(w => w.trim().length > 1);
-    
-    // بررسی کلمات
     const hasBadWord = badWords.some(word => text.includes(word.trim()));
-    
-    // بررسی لینک
     const linkRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,})|(@[a-zA-Z0-9_]+)/i;
     const hasLink = linkRegex.test(text);
 
@@ -61,13 +81,12 @@ export default async function handler(req, res) {
   }
 
   // ==========================================
-  // بخش 2: سیستم ضد تکرار (هوشمند شده)
+  // بخش 2: سیستم ضد تکرار
   // ==========================================
   if (KV_URL && KV_TOKEN && !isExempt) {
     let uniqueKey = null;
 
     if (message.text) {
-      // تغییر مهم: پیام‌های متنی کوتاه‌تر از 15 حرف بررسی نمی‌شوند تا چت عادی پاک نشود
       if (message.text.length > 15) {
         uniqueKey = "text_" + message.text.substring(0, 50).replace(/\s/g, '');
       }
