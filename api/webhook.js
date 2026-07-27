@@ -62,7 +62,7 @@ export default async function handler(req, res) {
   // ==========================================
   if (message.text && !isExempt) {
     const text = message.text;
-    const badWordsRaw = ["شاشزاده","کون", "کص", "سس خرسی", "تام مورلی", "کسکش", "کوسکش", "کوصکش", "کصکش", "کیر", "کوس"]; 
+    const badWordsRaw = ["شاشزاده", "کون", "کص", "سس خرسی", "تام مورلی", "کسکش", "کوسکش", "کوصکش", "کصکش", "کیر", "کوس"]; 
      
     const badWords = badWordsRaw.filter(w => w.trim().length > 1);
     const hasBadWord = badWords.some(word => text.includes(word.trim()));
