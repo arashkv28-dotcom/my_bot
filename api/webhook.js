@@ -36,7 +36,7 @@ export default async function handler(req, res) {
   const KV_URL = process.env.KV_REST_API_URL;
   const KV_TOKEN = process.env.KV_REST_API_TOKEN;
 
-  // ----------------------------------------------------
+  //  // ----------------------------------------------------
   // بخش 1: قابلیت نستعلیق
   // ----------------------------------------------------
   if (message.text && message.text.startsWith('نستعلیق ')) {
@@ -50,35 +50,20 @@ export default async function handler(req, res) {
       return res.status(200).send('OK');
     }
 
-    await tgApi('sendMessage', {
-      chat_id: chatId,
-      text: '⏳ در حال ساخت تصویر نستعلیق...'
-    });
-
     try {
+      // ساخت عکس از سرور خودمان (بدون API خارجی)
       const encodedText = encodeURIComponent(persianText);
-      const imageUrl = `https://api.codebazan.ir/nastaliq/?text=${encodedText}`;
-      const imageRes = await fetch(imageUrl, {
-        headers: { 'User-Agent': 'Mozilla/5.0' }
-      });
-
-      if (!imageRes.ok) throw new Error('API error');
-
-      const imageBuffer = await imageRes.arrayBuffer();
-      const imageBytes = new Uint8Array(imageBuffer);
+      const imageUrl = `https://my-bot-topaz-seven.vercel.app/api/image?text=${encodedText}`;
 
       const formData = new FormData();
       formData.append('chat_id', chatId.toString());
       formData.append('caption', `✍️ ${persianText}`);
-      formData.append('photo', new Blob([imageBytes], { type: 'image/png' }), 'nastaliq.png');
+      formData.append('photo', imageUrl);
 
-      const sendRes = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
         method: 'POST',
         body: formData
       });
-
-      const sendData = await sendRes.json();
-      if (!sendData.ok) throw new Error('Send error');
 
     } catch (e) {
       await tgApi('sendMessage', {
@@ -90,6 +75,7 @@ export default async function handler(req, res) {
 
     return res.status(200).send('OK');
   }
+  
 
   // ----------------------------------------------------
   // بخش 2: فیلتر کلمات ممنوعه و لینک (فقط برای اعضای معمولی)
