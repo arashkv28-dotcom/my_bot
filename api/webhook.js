@@ -29,8 +29,11 @@ export default async function handler(req, res) {
   const KV_URL = process.env.KV_REST_API_URL;
   const KV_TOKEN = process.env.KV_REST_API_TOKEN;
 
+  // تابع ایجاد تاخیر زمانی (برای پاک کردن خودکار پیام‌ها)
+  const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
   // ==========================================
-  // 🎬 بخش ویژه: دانلودر (با اولویت امنیت گروه)
+  // 🎬 بخش ویژه: دانلودر (با پاکسازی خودکار اخطارها)
   // ==========================================
   if (message.text) {
     const text = message.text;
@@ -40,7 +43,7 @@ export default async function handler(req, res) {
     if (match) {
       const mediaUrl = match[0];
 
-      // اولویت اول: اگر فرستنده ادمین نیست، لینک را درجا پاک کن!
+      // پاک کردن لینک فرستاده شده توسط کاربر عادی
       if (!isExempt) {
         await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
       }
@@ -48,28 +51,25 @@ export default async function handler(req, res) {
       // ارسال پیام انتظار
       let waitMsgRes = await tgApi('sendMessage', { 
         chat_id: chatId, 
-        text: `📥 در حال تلاش برای دانلود...\n(درخواست از: ${message.from.first_name || "کاربر"})`
+        text: `📥 در حال بررسی لینک...\n(درخواست از: ${message.from.first_name || "کاربر"})`
       });
       let waitMsgData = await waitMsgRes.json();
       let waitMsgId = waitMsgData.ok ? waitMsgData.result.message_id : null;
 
       try {
-        // تلاش برای دانلود از API
         const cobaltRes = await fetch("https://api.cobalt.tools/api/json", {
           method: "POST",
           headers: {
             "Accept": "application/json",
             "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+            "User-Agent": "Mozilla/5.0"
           },
-          body: JSON.stringify({
-            url: mediaUrl,
-            videoQuality: "480"
-          })
+          body: JSON.stringify({ url: mediaUrl, videoQuality: "480" })
         });
 
         const cobaltData = await cobaltRes.json();
 
+        // اگر ویدیو پیدا شد
         if (cobaltData.status === "stream" || cobaltData.status === "redirect" || cobaltData.url) {
           const sendVidRes = await tgApi('sendVideo', {
             chat_id: chatId,
@@ -80,28 +80,34 @@ export default async function handler(req, res) {
           const sendVidData = await sendVidRes.json();
 
           if (sendVidData.ok) {
+            // ویدیو ارسال شد، پیام انتظار را پاک کن
             if (waitMsgId) await tgApi('deleteMessage', { chat_id: chatId, message_id: waitMsgId });
             return res.status(200).send('OK');
           }
         }
         
-        // اگر ویدیو پیدا نشد یا ارور داد
+        // --- اگر ویدیو پیدا نشد (باگ یا پیج پرایوت) ---
         if (waitMsgId) {
           await tgApi('editMessageText', { 
             chat_id: chatId, 
             message_id: waitMsgId, 
-            text: `❌ دانلود شکست خورد.\n(احتمالاً پیج پرایوت است یا سرور شلوغ است)` 
+            text: `❌ دانلود شکست خورد.\n(این پیام تا چند ثانیه دیگر پاک می‌شود)` 
           });
+          await sleep(4000); // 4 ثانیه صبر می‌کند تا کاربر پیام را بخواند
+          await tgApi('deleteMessage', { chat_id: chatId, message_id: waitMsgId }); // پیام را پاک می‌کند
         }
         return res.status(200).send('OK');
 
       } catch (error) {
+        // --- اگر سرور دانلودر قطع بود ---
         if (waitMsgId) {
           await tgApi('editMessageText', { 
             chat_id: chatId, 
             message_id: waitMsgId, 
-            text: `❌ سرور دانلودر موقتاً قطع است.` 
+            text: `❌ سرور دانلودر موقتاً پاسخگو نیست.\n(این پیام خودکار پاک می‌شود)` 
           });
+          await sleep(4000); // 4 ثانیه صبر می‌کند
+          await tgApi('deleteMessage', { chat_id: chatId, message_id: waitMsgId }); // پیام را پاک می‌کند
         }
         return res.status(200).send('OK');
       }
@@ -120,8 +126,6 @@ export default async function handler(req, res) {
     ]; 
     const badWords = badWordsRaw.filter(w => w.trim().length > 1);
     const hasBadWord = badWords.some(word => text.includes(word.trim()));
-    
-    // شناسایی تمام لینک‌ها
     const linkRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,})|(@[a-zA-Z0-9_]+)/i;
     const hasLink = linkRegex.test(text);
 
