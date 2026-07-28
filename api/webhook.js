@@ -86,30 +86,26 @@ export default async function handler(req, res) {
   }
 
   // ==========================================
-  // 🎨 بخش 3: مبدل عکس (با سرور بین‌المللی)
+  // ⌨️ بخش 3: تغییر فونت به استایلِ ماشینی تلگرام
   // ==========================================
   if (message.text && message.text.startsWith("/font")) {
     let userText = message.text.replace("/font", "").trim();
     
     if (userText.length > 0) {
-      // استفاده از سرور Placehold با فونت زیبای Amiri (کلاسیک) و پس زمینه سرمه‌ای تاریک
-      const photoUrl = `https://placehold.co/800x400/1e293b/ffffff.png?text=${encodeURIComponent(userText)}&font=Amiri`;
+      // ارسال متن با فرمت کد (Monospace)
+      const formattedText = `<code>${userText}</code>\n\n👤 ${message.from.first_name || "کاربر"}`;
       
-      try {
-        const sendRes = await tgApi('sendPhoto', {
-          chat_id: chatId,
-          photo: photoUrl,
-          caption: `🎨 ساخته شده برای: ${message.from.first_name || "کاربر"}`
-        });
+      const sendRes = await tgApi('sendMessage', {
+        chat_id: chatId,
+        text: formattedText,
+        parse_mode: "HTML"
+      });
 
-        const responseData = await sendRes.json();
+      const responseData = await sendRes.json();
 
-        // اگر آپلود موفق بود، پیام اصلی را پاک کن
-        if (responseData.ok) {
-          await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
-        }
-      } catch (error) {
-        await tgApi('sendMessage', { chat_id: chatId, text: "❌ خطا در ساخت عکس." });
+      // اگر موفق بود، پیام اصلی را پاک کن
+      if (responseData.ok) {
+        await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
       }
       return res.status(200).send('OK');
     }
