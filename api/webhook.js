@@ -30,7 +30,78 @@ export default async function handler(req, res) {
   const KV_TOKEN = process.env.KV_REST_API_TOKEN;
 
   // ==========================================
-  // بخش 1: بررسی کلمات ممنوعه و لینک
+  // 🎬 بخش ویژه: دانلودر سریع (اینستاگرام و ایکس)
+  // ==========================================
+  if (message.text) {
+    const text = message.text;
+    // پیدا کردن لینک اینستاگرام یا توییتر/ایکس در متن
+    const mediaRegex = /(https?:\/\/(?:www\.)?(?:instagram\.com|x\.com|twitter\.com)\/[^\s]+)/i;
+    const match = text.match(mediaRegex);
+
+    if (match) {
+      const mediaUrl = match[0];
+
+      // 1. ارسال پیام انتظار
+      let waitMsgRes = await tgApi('sendMessage', { 
+        chat_id: chatId, 
+        text: "📥 در حال دریافت ویدیو...",
+        reply_to_message_id: messageId
+      });
+      let waitMsgData = await waitMsgRes.json();
+      let waitMsgId = waitMsgData.ok ? waitMsgData.result.message_id : null;
+
+      try {
+        // 2. درخواست به سرور قدرتمند کبالت (سرعت بالا، کیفیت 480p)
+        const cobaltRes = await fetch("https://api.cobalt.tools/api/json", {
+          method: "POST",
+          headers: {
+            "Accept": "application/json",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            url: mediaUrl,
+            videoQuality: "480" // تنظیم روی کیفیت پایین برای نهایت سرعت
+          })
+        });
+
+        const cobaltData = await cobaltRes.json();
+
+        // 3. اگر لینک مستقیم ویدیو پیدا شد
+        if (cobaltData.status === "stream" || cobaltData.status === "redirect" || cobaltData.url) {
+          
+          // دستور به تلگرام برای دانلود و ارسال ویدیو
+          const sendVidRes = await tgApi('sendVideo', {
+            chat_id: chatId,
+            video: cobaltData.url,
+            caption: `🎬 ارسال شده توسط: ${message.from.first_name || "کاربر"}`
+          });
+
+          const sendVidData = await sendVidRes.json();
+
+          if (sendVidData.ok) {
+            // موفقیت! پاک کردن پیام انتظار و پیام اصلی کاربر (که حاوی لینک بود)
+            if (waitMsgId) await tgApi('deleteMessage', { chat_id: chatId, message_id: waitMsgId });
+            await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
+            
+            // پایان اجرای کد (تا بقیه کدها مثل حذف لینک اجرا نشوند)
+            return res.status(200).send('OK');
+          }
+        }
+        
+        // اگر ویدیو پیدا نشد (مثلاً پیج پرایوت بود)
+        if (waitMsgId) await tgApi('deleteMessage', { chat_id: chatId, message_id: waitMsgId });
+        await tgApi('sendMessage', { chat_id: chatId, text: "❌ دریافت ویدیو شکست خورد (احتمالاً پیج شخصی است)." });
+        return res.status(200).send('OK');
+
+      } catch (error) {
+        if (waitMsgId) await tgApi('deleteMessage', { chat_id: chatId, message_id: waitMsgId });
+        return res.status(200).send('OK');
+      }
+    }
+  }
+
+  // ==========================================
+  // بخش 1: بررسی کلمات ممنوعه و لینک‌های متفرقه
   // ==========================================
   if (message.text && !isExempt) {
     const text = message.text;
@@ -41,6 +112,8 @@ export default async function handler(req, res) {
     ]; 
     const badWords = badWordsRaw.filter(w => w.trim().length > 1);
     const hasBadWord = badWords.some(word => text.includes(word.trim()));
+    
+    // شناسایی تمام لینک‌ها
     const linkRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,})|(@[a-zA-Z0-9_]+)/i;
     const hasLink = linkRegex.test(text);
 
@@ -86,24 +159,18 @@ export default async function handler(req, res) {
   }
 
   // ==========================================
-  // ⌨️ بخش 3: تغییر فونت به استایلِ ماشینی تلگرام
+  // ⌨️ بخش 3: فونت ماشینی تلگرام
   // ==========================================
   if (message.text && message.text.startsWith("/font")) {
     let userText = message.text.replace("/font", "").trim();
-    
     if (userText.length > 0) {
-      // ارسال متن با فرمت کد (Monospace)
       const formattedText = `<code>${userText}</code>\n\n👤 ${message.from.first_name || "کاربر"}`;
-      
       const sendRes = await tgApi('sendMessage', {
         chat_id: chatId,
         text: formattedText,
         parse_mode: "HTML"
       });
-
       const responseData = await sendRes.json();
-
-      // اگر موفق بود، پیام اصلی را پاک کن
       if (responseData.ok) {
         await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
       }
