@@ -30,78 +30,86 @@ export default async function handler(req, res) {
   const KV_TOKEN = process.env.KV_REST_API_TOKEN;
 
   // ==========================================
-  // 🎬 بخش ویژه: دانلودر سریع (اینستاگرام و ایکس)
+  // 🎬 بخش ویژه: دانلودر (با اولویت امنیت گروه)
   // ==========================================
   if (message.text) {
     const text = message.text;
-    // پیدا کردن لینک اینستاگرام یا توییتر/ایکس در متن
     const mediaRegex = /(https?:\/\/(?:www\.)?(?:instagram\.com|x\.com|twitter\.com)\/[^\s]+)/i;
     const match = text.match(mediaRegex);
 
     if (match) {
       const mediaUrl = match[0];
 
-      // 1. ارسال پیام انتظار
+      // اولویت اول: اگر فرستنده ادمین نیست، لینک را درجا پاک کن!
+      if (!isExempt) {
+        await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
+      }
+
+      // ارسال پیام انتظار
       let waitMsgRes = await tgApi('sendMessage', { 
         chat_id: chatId, 
-        text: "📥 در حال دریافت ویدیو...",
-        reply_to_message_id: messageId
+        text: `📥 در حال تلاش برای دانلود...\n(درخواست از: ${message.from.first_name || "کاربر"})`
       });
       let waitMsgData = await waitMsgRes.json();
       let waitMsgId = waitMsgData.ok ? waitMsgData.result.message_id : null;
 
       try {
-        // 2. درخواست به سرور قدرتمند کبالت (سرعت بالا، کیفیت 480p)
+        // تلاش برای دانلود از API
         const cobaltRes = await fetch("https://api.cobalt.tools/api/json", {
           method: "POST",
           headers: {
             "Accept": "application/json",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
           },
           body: JSON.stringify({
             url: mediaUrl,
-            videoQuality: "480" // تنظیم روی کیفیت پایین برای نهایت سرعت
+            videoQuality: "480"
           })
         });
 
         const cobaltData = await cobaltRes.json();
 
-        // 3. اگر لینک مستقیم ویدیو پیدا شد
         if (cobaltData.status === "stream" || cobaltData.status === "redirect" || cobaltData.url) {
-          
-          // دستور به تلگرام برای دانلود و ارسال ویدیو
           const sendVidRes = await tgApi('sendVideo', {
             chat_id: chatId,
             video: cobaltData.url,
-            caption: `🎬 ارسال شده توسط: ${message.from.first_name || "کاربر"}`
+            caption: `🎬 ویدیوی درخواستی:\n👤 ${message.from.first_name || "کاربر"}`
           });
 
           const sendVidData = await sendVidRes.json();
 
           if (sendVidData.ok) {
-            // موفقیت! پاک کردن پیام انتظار و پیام اصلی کاربر (که حاوی لینک بود)
             if (waitMsgId) await tgApi('deleteMessage', { chat_id: chatId, message_id: waitMsgId });
-            await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
-            
-            // پایان اجرای کد (تا بقیه کدها مثل حذف لینک اجرا نشوند)
             return res.status(200).send('OK');
           }
         }
         
-        // اگر ویدیو پیدا نشد (مثلاً پیج پرایوت بود)
-        if (waitMsgId) await tgApi('deleteMessage', { chat_id: chatId, message_id: waitMsgId });
-        await tgApi('sendMessage', { chat_id: chatId, text: "❌ دریافت ویدیو شکست خورد (احتمالاً پیج شخصی است)." });
+        // اگر ویدیو پیدا نشد یا ارور داد
+        if (waitMsgId) {
+          await tgApi('editMessageText', { 
+            chat_id: chatId, 
+            message_id: waitMsgId, 
+            text: `❌ دانلود شکست خورد.\n(احتمالاً پیج پرایوت است یا سرور شلوغ است)` 
+          });
+        }
         return res.status(200).send('OK');
 
       } catch (error) {
-        if (waitMsgId) await tgApi('deleteMessage', { chat_id: chatId, message_id: waitMsgId });
+        if (waitMsgId) {
+          await tgApi('editMessageText', { 
+            chat_id: chatId, 
+            message_id: waitMsgId, 
+            text: `❌ سرور دانلودر موقتاً قطع است.` 
+          });
+        }
         return res.status(200).send('OK');
       }
     }
   }
 
   // ==========================================
-  // بخش 1: بررسی کلمات ممنوعه و لینک‌های متفرقه
+  // بخش 1: بررسی کلمات ممنوعه و سایر لینک‌ها
   // ==========================================
   if (message.text && !isExempt) {
     const text = message.text;
