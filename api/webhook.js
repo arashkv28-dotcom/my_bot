@@ -29,11 +29,10 @@ export default async function handler(req, res) {
   const KV_URL = process.env.KV_REST_API_URL;
   const KV_TOKEN = process.env.KV_REST_API_TOKEN;
 
-  // تابع ایجاد تاخیر زمانی (برای پاک کردن خودکار پیام‌ها)
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
   // ==========================================
-  // 🎬 بخش ویژه: دانلودر (با پاکسازی خودکار اخطارها)
+  // 🎬 بخش ویژه: دانلودر (با سیستم دکمه شیشه‌ای جایگزین)
   // ==========================================
   if (message.text) {
     const text = message.text;
@@ -43,71 +42,76 @@ export default async function handler(req, res) {
     if (match) {
       const mediaUrl = match[0];
 
-      // پاک کردن لینک فرستاده شده توسط کاربر عادی
+      // حذف لینک کاربر برای حفظ امنیت گروه
       if (!isExempt) {
         await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
       }
 
-      // ارسال پیام انتظار
       let waitMsgRes = await tgApi('sendMessage', { 
         chat_id: chatId, 
-        text: `📥 در حال بررسی لینک...\n(درخواست از: ${message.from.first_name || "کاربر"})`
+        text: `📥 در حال پردازش ویدیو...`
       });
       let waitMsgData = await waitMsgRes.json();
       let waitMsgId = waitMsgData.ok ? waitMsgData.result.message_id : null;
 
       try {
+        // استفاده از سرور قدرتمندتر با هدرهای استاندارد برای جلوگیری از بلاک شدن
         const cobaltRes = await fetch("https://api.cobalt.tools/api/json", {
           method: "POST",
           headers: {
             "Accept": "application/json",
             "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "Origin": "https://cobalt.tools"
           },
           body: JSON.stringify({ url: mediaUrl, videoQuality: "480" })
         });
 
         const cobaltData = await cobaltRes.json();
 
-        // اگر ویدیو پیدا شد
         if (cobaltData.status === "stream" || cobaltData.status === "redirect" || cobaltData.url) {
+          
+          // نقشه اول: تلاش برای آپلود مستقیم ویدیو در تلگرام
           const sendVidRes = await tgApi('sendVideo', {
             chat_id: chatId,
             video: cobaltData.url,
-            caption: `🎬 ویدیوی درخواستی:\n👤 ${message.from.first_name || "کاربر"}`
+            caption: `👤 درخواست کننده: ${message.from.first_name || "کاربر"}`
           });
-
           const sendVidData = await sendVidRes.json();
 
           if (sendVidData.ok) {
-            // ویدیو ارسال شد، پیام انتظار را پاک کن
             if (waitMsgId) await tgApi('deleteMessage', { chat_id: chatId, message_id: waitMsgId });
+            return res.status(200).send('OK');
+          } else {
+            // نقشه دوم (سپر دفاعی): اگر تلگرام ویدیو را آپلود نکرد، دکمه شیشه‌ای بفرست
+            if (waitMsgId) {
+              await tgApi('editMessageText', {
+                chat_id: chatId,
+                message_id: waitMsgId,
+                text: `🎥 تلگرام نتوانست این ویدیو را مستقیم آپلود کند (حجم بالا).\n\n👤 درخواست کننده: ${message.from.first_name || "کاربر"}\n👇 برای تماشای ویدیو روی دکمه زیر کلیک کنید:`,
+                reply_markup: {
+                  inline_keyboard: [[{ text: "📥 تماشای مستقیم ویدیو", url: cobaltData.url }]]
+                }
+              });
+              // این پیام دکمه‌دار را پاک نمی‌کنیم تا کاربر بتواند ویدیو را ببیند
+            }
             return res.status(200).send('OK');
           }
         }
         
-        // --- اگر ویدیو پیدا نشد (باگ یا پیج پرایوت) ---
+        // اگر کلاً ویدیو پیدا نشد
         if (waitMsgId) {
-          await tgApi('editMessageText', { 
-            chat_id: chatId, 
-            message_id: waitMsgId, 
-            text: `❌ دانلود شکست خورد.\n(این پیام تا چند ثانیه دیگر پاک می‌شود)` 
-          });
-          await sleep(4000); // 4 ثانیه صبر می‌کند تا کاربر پیام را بخواند
-          await tgApi('deleteMessage', { chat_id: chatId, message_id: waitMsgId }); // پیام را پاک می‌کند
+          await tgApi('editMessageText', { chat_id: chatId, message_id: waitMsgId, text: `❌ ویدیو پیدا نشد (پیج پرایوت است).` });
+          await sleep(3000);
+          await tgApi('deleteMessage', { chat_id: chatId, message_id: waitMsgId });
         }
         return res.status(200).send('OK');
 
       } catch (error) {
-        // --- اگر سرور دانلودر قطع بود ---
         if (waitMsgId) {
-          await tgApi('editMessageText', { 
-            chat_id: chatId, 
-            message_id: waitMsgId, 
-            text: `❌ سرور دانلودر موقتاً پاسخگو نیست.\n(این پیام خودکار پاک می‌شود)` 
-          });
-          await sleep(4000); // 4 ثانیه صبر می‌کند
-          await tgApi('deleteMessage', { chat_id: chatId, message_id: waitMsgId }); // پیام را پاک می‌کند
+          await tgApi('editMessageText', { chat_id: chatId, message_id: waitMsgId, text: `❌ سرور موقتاً در دسترس نیست.` });
+          await sleep(3000);
+          await tgApi('deleteMessage', { chat_id: chatId, message_id: waitMsgId });
         }
         return res.status(200).send('OK');
       }
@@ -115,12 +119,12 @@ export default async function handler(req, res) {
   }
 
   // ==========================================
-  // بخش 1: بررسی کلمات ممنوعه و سایر لینک‌ها
+  // بخش 1: بررسی کلمات ممنوعه
   // ==========================================
   if (message.text && !isExempt) {
     const text = message.text;
     const badWordsRaw = [
-      "احمق", "بیشعور", "گوه نخور", "شاشزاده", "کون", "کص", 
+      "احمق", "بیشعور", "کلاهبرداری", "شاشزاده", "کون", "کص", 
       "سس خرسی", "تام مورلی", "کسکش", "کوسکش", "کوصکش", "کصکش", 
       "کیر", "کوس"
     ]; 
