@@ -120,7 +120,7 @@ export default async function handler(req, res) {
   if (message.text && !isExempt) {
     const text = message.text;
     const badWordsRaw = [
-      "احمق", "بیشعور", "کلاهبرداری", "شاشزاده", "کون", "کص", 
+      "احمق", "بیشعور", "گوه نخور", "شاشزاده", "کون", "کص", 
       "سس خرسی", "تام مورلی", "کسکش", "کوسکش", "کوصکش", "کصکش", 
       "کیر", "کوس"
     ]; 
