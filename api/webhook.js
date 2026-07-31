@@ -1,5 +1,4 @@
 export default async function handler(req, res) {
-  // ۱. کنترل درخواست‌های غیرمرتبط
   if (req.method !== 'POST') return res.status(200).send('Bot is running on Vercel!');
   if (!req.body) return res.status(200).send('OK');
   
@@ -44,6 +43,7 @@ export default async function handler(req, res) {
       newText = "📢 **لیست کانال‌های ما:**";
       newMarkup = {
         inline_keyboard: [
+          [{ text: "آرشیو جاویدنامان دیماه", url: "https://t.me/javidnam10_1404" }], // کانال جدید اضافه شد
           [{ text: "عکس و استیکر اندیشه پهلویسم", url: "https://t.me/pic_gifpahlavi" }],
           [{ text: "اندیشه پهلویسم", url: "https://t.me/andishepahlavism" }],
           [{ text: "فروپاشی", url: "https://t.me/froopashee2" }],
@@ -90,7 +90,7 @@ export default async function handler(req, res) {
   }
 
   // ==========================================
-  // 🛡️ بخش دوم: دریافت پیام‌های متنی
+  // 🛡️ بخش دوم: دریافت پیام‌های متنی (مدیریت امنیت)
   // ==========================================
   const message = req.body.message || req.body.channel_post;
   if (!message || !message.text) return res.status(200).send('OK');
@@ -104,7 +104,7 @@ export default async function handler(req, res) {
   const isExempt = WHITELIST_IDS.includes(userId) || req.body.channel_post;
   const isGroup = message.chat.type !== 'private';
 
-  // --- دکمه‌های منو ---
+  // --- دکمه‌های احضار منو ---
   if (text === "/start") {
     if (isGroup) await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
     await tgApi('sendMessage', { chat_id: chatId, text: "👋 دکمه‌ی دسترسی سریع به منو اضافه شد. 👇", reply_markup: { keyboard: [[{ text: "📋 منوی اصلی" }]], resize_keyboard: true } });
@@ -127,12 +127,13 @@ export default async function handler(req, res) {
     return res.status(200).send('OK');
   }
 
-  // --- سیستم امنیت ---
+  // --- سیستم امنیتی (حذف لینک، فحش و پیام تکراری) ---
   if (!isExempt && isGroup) {
     const KV_URL = process.env.KV_REST_API_URL;
     const KV_TOKEN = process.env.KV_REST_API_TOKEN;
     
-    if (KV_URL && KV_TOKEN && text.length > 15 && !text.startsWith("رباتی")) {
+    // ۱. بررسی پیام‌های تکراری
+    if (KV_URL && KV_TOKEN && text.length > 15) {
         const uniqueKey = "text_" + text.substring(0, 50).replace(/\s/g, '');
         try {
           const checkRes = await fetch(`${KV_URL}/get/${encodeURIComponent(uniqueKey)}`, { headers: { Authorization: `Bearer ${KV_TOKEN}` } });
@@ -143,74 +144,16 @@ export default async function handler(req, res) {
           } else {
             await fetch(`${KV_URL}/set/${encodeURIComponent(uniqueKey)}/1/EX/86400`, { headers: { Authorization: `Bearer ${KV_TOKEN}` } });
           }
-        } catch (e) { /* نادیده گرفتن ارور دیتابیس */ }
+        } catch (e) { /* نادیده گرفتن ارور موقت دیتابیس */ }
     }
 
-    // 🔴 کلمات ممنوعه خود را اینجا قرار دهید:
-    const badWordsRaw = ["جنده", "کونی", "گوه نخور ", "شاشزاده", "کون", "کص", "سس خرسی", "تام مورلی", "کسکش", "کوسکش", "کوصکش", "کصکش", "کیر", "کوس"];
+    // ۲. بررسی کلمات رکیک و لینک‌ها
+    const badWordsRaw = ["گوه نخور", "جنده", "کونی", "شاشزاده", "کون", "کص", "سس خرسی", "تام مورلی", "کسکش", "کوسکش", "کوصکش", "کصکش", "کیر", "کوس"];
     const hasBadWord = badWordsRaw.some(w => text.includes(w));
     const linkRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,})|(@[a-zA-Z0-9_]+)/i;
 
     if (hasBadWord || linkRegex.test(text)) {
       await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
-      return res.status(200).send('OK');
-    }
-  }
-
-  // ==========================================
-  // 🧠 بخش سوم: هوش مصنوعی جمینای (استفاده از مدل رایگان)
-  // ==========================================
-  if (text.startsWith("رباتی")) {
-    const userPrompt = text.replace("رباتی", "").trim();
-    
-    if (userPrompt.length > 0) {
-      let waitRes = await tgApi('sendMessage', { chat_id: chatId, text: "🧠 در حال پردازش...", reply_to_message_id: messageId });
-      let waitData = await waitRes.json();
-      let waitMsgId = waitData.ok ? waitData.result.message_id : null;
-
-      try {
-        const geminiKey = process.env.GEMINI_API_KEY;
-        
-        if (!geminiKey) {
-          if (waitMsgId) await tgApi('editMessageText', { chat_id: chatId, message_id: waitMsgId, text: "❌ کلید API گوگل در ورسل پیدا نشد!" });
-          return res.status(200).send('OK');
-        }
-
-        // 🚀 استفاده دقیق از مدل ۱.۵ که صد در صد رایگان است
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
-        
-        const aiResponse = await fetch(geminiUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: userPrompt }] }]
-          })
-        });
-
-        const rawResponseText = await aiResponse.text();
-
-        try {
-          const aiData = JSON.parse(rawResponseText);
-          let finalAnswer = "";
-
-          if (aiData.error) {
-            finalAnswer = `❌ ارور رسمی گوگل:\nCode: ${aiData.error.code}\nMessage: ${aiData.error.message}`;
-          } else if (aiData.candidates && aiData.candidates.length > 0) {
-            finalAnswer = aiData.candidates[0].content.parts[0].text;
-            finalAnswer = finalAnswer.replace(/\*\*/g, ""); // پاک کردن بولدهای اضافی
-          } else {
-            finalAnswer = `⚠️ فرمت ناشناس:\n${rawResponseText.substring(0, 100)}...`;
-          }
-
-          if (waitMsgId) await tgApi('editMessageText', { chat_id: chatId, message_id: waitMsgId, text: finalAnswer });
-
-        } catch (jsonError) {
-          if (waitMsgId) await tgApi('editMessageText', { chat_id: chatId, message_id: waitMsgId, text: `❌ خطای ساختار پاسخ گوگل.` });
-        }
-
-      } catch (error) {
-        if (waitMsgId) await tgApi('editMessageText', { chat_id: chatId, message_id: waitMsgId, text: `❌ قطع ارتباط ورسل با گوگل.` });
-      }
       return res.status(200).send('OK');
     }
   }
