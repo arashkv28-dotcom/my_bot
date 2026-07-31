@@ -93,7 +93,7 @@ export default async function handler(req, res) {
   }
 
   // ==========================================
-  // 🛡️ بخش دوم: مدیریت پیام‌های متنی (امنیت و کیبورد)
+  // 🛡️ بخش دوم: دریافت پیام‌های متنی
   // ==========================================
   const message = req.body.message || req.body.channel_post;
   if (!message || !message.text) return res.status(200).send('OK');
@@ -107,7 +107,7 @@ export default async function handler(req, res) {
   const isExempt = WHITELIST_IDS.includes(userId) || req.body.channel_post;
   const isGroup = message.chat.type !== 'private';
 
-  // --- ۱. نصب دکمه‌ی ثابت در قسمت تایپ (با دستور /start) ---
+  // --- ۱. احضار منوی شیشه‌ای ---
   if (text === "/start") {
     if (isGroup) await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
     await tgApi('sendMessage', {
@@ -121,10 +121,8 @@ export default async function handler(req, res) {
     return res.status(200).send('OK');
   }
 
-  // --- ۲. احضار منوی شیشه‌ای ---
   if (text === "/menu" || text === "منو" || text === "📋 منوی اصلی") {
     if (isGroup) await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
-
     await tgApi('sendMessage', {
       chat_id: chatId,
       text: "📌 **منوی اصلی مجموعه‌ها**\nلطفاً یکی از گزینه‌های زیر را انتخاب کنید:",
@@ -141,34 +139,96 @@ export default async function handler(req, res) {
     return res.status(200).send('OK');
   }
 
-  // --- ۳. سیستم امنیت ---
+  // --- ۲. سیستم امنیت (برای جلوگیری از پردازش فحش توسط هوش مصنوعی!) ---
   if (!isExempt && isGroup) {
     const KV_URL = process.env.KV_REST_API_URL;
     const KV_TOKEN = process.env.KV_REST_API_TOKEN;
     
     if (KV_URL && KV_TOKEN && text.length > 15) {
         const uniqueKey = "text_" + text.substring(0, 50).replace(/\s/g, '');
-        const checkRes = await fetch(`${KV_URL}/get/${encodeURIComponent(uniqueKey)}`, {
-          headers: { Authorization: `Bearer ${KV_TOKEN}` }
-        });
+        const checkRes = await fetch(`${KV_URL}/get/${encodeURIComponent(uniqueKey)}`, { headers: { Authorization: `Bearer ${KV_TOKEN}` } });
         const checkData = await checkRes.json();
         
         if (checkData.result !== null) {
           await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
           return res.status(200).send('OK');
         } else {
-          await fetch(`${KV_URL}/set/${encodeURIComponent(uniqueKey)}/1/EX/86400`, {
-            headers: { Authorization: `Bearer ${KV_TOKEN}` }
-          });
+          await fetch(`${KV_URL}/set/${encodeURIComponent(uniqueKey)}/1/EX/86400`, { headers: { Authorization: `Bearer ${KV_TOKEN}` } });
         }
     }
 
-    const badWordsRaw = ["جاکش", "گوه نخور", "کونی", "شاشزاده", "کون", "کص", "سس خرسی", "تام مورلی", "کسکش", "کوسکش", "کوصکش", "کصکش", "کیر", "کوس"];
+    const badWordsRaw = ["احمق", "بیشعور", "کلاهبرداری", "شاشزاده", "کون", "کص", "سس خرسی", "تام مورلی", "کسکش", "کوسکش", "کوصکش", "کصکش", "کیر", "کوس"];
     const hasBadWord = badWordsRaw.some(w => text.includes(w));
     const linkRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,})|(@[a-zA-Z0-9_]+)/i;
 
     if (hasBadWord || linkRegex.test(text)) {
       await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
+      return res.status(200).send('OK');
+    }
+  }
+
+  // ==========================================
+  // 🧠 بخش سوم: هوش مصنوعی جمینای (Gemini AI)
+  // ==========================================
+  if (text.startsWith("رباتی")) {
+    const userPrompt = text.replace("رباتی", "").trim();
+    
+    if (userPrompt.length > 0) {
+      // ارسال پیام انتظار
+      let waitRes = await tgApi('sendMessage', { 
+        chat_id: chatId, 
+        text: "🧠 در حال تفکر...", 
+        reply_to_message_id: messageId 
+      });
+      let waitData = await waitRes.json();
+      let waitMsgId = waitData.ok ? waitData.result.message_id : null;
+
+      try {
+        const geminiKey = process.env.GEMINI_API_KEY;
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`;
+        
+        // درخواست به مغز گوگل
+        const aiResponse = await fetch(geminiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: userPrompt }] }]
+          })
+        });
+
+        const aiData = await aiResponse.json();
+        
+        let finalAnswer = "متاسفانه نتوانستم جوابی پیدا کنم.";
+        if (aiData.candidates && aiData.candidates.length > 0) {
+          finalAnswer = aiData.candidates[0].content.parts[0].text;
+          // پاک کردن علامت‌های بولد گوگل برای جلوگیری از ارور تلگرام
+          finalAnswer = finalAnswer.replace(/\*\*/g, ""); 
+        }
+
+        // ویرایش پیام انتظار با جواب اصلی
+        if (waitMsgId) {
+          await tgApi('editMessageText', { 
+            chat_id: chatId, 
+            message_id: waitMsgId, 
+            text: finalAnswer 
+          });
+        } else {
+          await tgApi('sendMessage', { 
+            chat_id: chatId, 
+            text: finalAnswer,
+            reply_to_message_id: messageId
+          });
+        }
+
+      } catch (error) {
+        if (waitMsgId) {
+          await tgApi('editMessageText', { 
+            chat_id: chatId, 
+            message_id: waitMsgId, 
+            text: "❌ ارتباط با سرور هوش مصنوعی قطع شد." 
+          });
+        }
+      }
       return res.status(200).send('OK');
     }
   }
