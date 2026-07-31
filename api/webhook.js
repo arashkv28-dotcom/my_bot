@@ -1,5 +1,5 @@
 export default async function handler(req, res) {
-  // ۱. کنترل درخواست‌های غیرمرتبط (مثل باز کردن لینک در مرورگر)
+  // ۱. کنترل درخواست‌های غیرمرتبط
   if (req.method !== 'POST') return res.status(200).send('Bot is running on Vercel!');
   if (!req.body) return res.status(200).send('OK');
   
@@ -147,7 +147,7 @@ export default async function handler(req, res) {
     }
 
     // 🔴 کلمات ممنوعه خود را اینجا قرار دهید:
-    const badWordsRaw = ["کلمه۱", "کلمه۲"];
+    const badWordsRaw = ["جنده", "کونی", "گوه نخور ", "شاشزاده", "کون", "کص", "سس خرسی", "تام مورلی", "کسکش", "کوسکش", "کوصکش", "کصکش", "کیر", "کوس"];
     const hasBadWord = badWordsRaw.some(w => text.includes(w));
     const linkRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,})|(@[a-zA-Z0-9_]+)/i;
 
@@ -158,7 +158,7 @@ export default async function handler(req, res) {
   }
 
   // ==========================================
-  // 🧠 بخش سوم: هوش مصنوعی جمینای (آپدیت به gemini-2.0-flash)
+  // 🧠 بخش سوم: هوش مصنوعی جمینای (استفاده از مدل رایگان)
   // ==========================================
   if (text.startsWith("رباتی")) {
     const userPrompt = text.replace("رباتی", "").trim();
@@ -172,12 +172,12 @@ export default async function handler(req, res) {
         const geminiKey = process.env.GEMINI_API_KEY;
         
         if (!geminiKey) {
-          if (waitMsgId) await tgApi('editMessageText', { chat_id: chatId, message_id: waitMsgId, text: "❌ کلید API گوگل (GEMINI_API_KEY) در ورسل پیدا نشد!" });
+          if (waitMsgId) await tgApi('editMessageText', { chat_id: chatId, message_id: waitMsgId, text: "❌ کلید API گوگل در ورسل پیدا نشد!" });
           return res.status(200).send('OK');
         }
 
-        // استفاده دقیق از مدلی که در لیست شما وجود داشت: gemini-2.0-flash
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`;
+        // 🚀 استفاده دقیق از مدل ۱.۵ که صد در صد رایگان است
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
         
         const aiResponse = await fetch(geminiUrl, {
           method: 'POST',
@@ -187,11 +187,9 @@ export default async function handler(req, res) {
           })
         });
 
-        // دریافت پاسخِ خام از گوگل
         const rawResponseText = await aiResponse.text();
 
         try {
-          // تبدیل پاسخ به JSON
           const aiData = JSON.parse(rawResponseText);
           let finalAnswer = "";
 
@@ -201,18 +199,17 @@ export default async function handler(req, res) {
             finalAnswer = aiData.candidates[0].content.parts[0].text;
             finalAnswer = finalAnswer.replace(/\*\*/g, ""); // پاک کردن بولدهای اضافی
           } else {
-            finalAnswer = `⚠️ گوگل جواب داد اما فرمت آن ناشناس است:\n${rawResponseText.substring(0, 100)}...`;
+            finalAnswer = `⚠️ فرمت ناشناس:\n${rawResponseText.substring(0, 100)}...`;
           }
 
           if (waitMsgId) await tgApi('editMessageText', { chat_id: chatId, message_id: waitMsgId, text: finalAnswer });
 
         } catch (jsonError) {
-          // اگر گوگل جوابی داد که اصلاً JSON نبود!
-          if (waitMsgId) await tgApi('editMessageText', { chat_id: chatId, message_id: waitMsgId, text: `❌ سرور گوگل یک پاسخ غیرمنتظره داد:\n${rawResponseText.substring(0, 100)}` });
+          if (waitMsgId) await tgApi('editMessageText', { chat_id: chatId, message_id: waitMsgId, text: `❌ خطای ساختار پاسخ گوگل.` });
         }
 
       } catch (error) {
-        if (waitMsgId) await tgApi('editMessageText', { chat_id: chatId, message_id: waitMsgId, text: `❌ اتصال اینترنت بین ورسل و گوگل قطع شد: ${error.message}` });
+        if (waitMsgId) await tgApi('editMessageText', { chat_id: chatId, message_id: waitMsgId, text: `❌ قطع ارتباط ورسل با گوگل.` });
       }
       return res.status(200).send('OK');
     }
