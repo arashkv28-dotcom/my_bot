@@ -1,5 +1,5 @@
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(200).send('Bot is running!');
+  if (req.method !== 'POST') return res.status(200).send('Bot is running on Vercel!');
   
   const BOT_TOKEN = process.env.BOT_TOKEN;
   
@@ -38,11 +38,11 @@ export default async function handler(req, res) {
       newText = "📢 **لیست کانال‌های ما:**";
       newMarkup = {
         inline_keyboard: [
-          [{ text: "کانال 1 عکس و استیکر اندیشه پهلویسم", url: "https://t.me/pic_gifpahlavi" }],
-          [{ text: "کانال 2 اندیشه پهلویسم", url: "https://t.me/andishepahlavism" }],
-          [{ text: "کانال 3 فروپاشی", url: "https://t.me/froopashee2" }],
-          [{ text: "کانال 4 الفبای سیاست", url: "https://t.me/Allephba" }],
-          [{ text: "🔙 بازگشت به منوی اصلی", callback_data: "main_menu" }]
+          [{ text: "عکس و استیکر اندیشه پهلویسم", url: "https://t.me/pic_gifpahlavi" }],
+          [{ text: "اندیشه پهلویسم", url: "https://t.me/andishepahlavism" }],
+          [{ text: "فروپاشی", url: "https://t.me/froopashee2" }],
+          [{ text: "الفبای سیاست", url: "https://t.me/Allephba" }],
+          [{ text: "🔙 بازگشت", callback_data: "main_menu" }]
         ]
       };
     }
@@ -50,12 +50,12 @@ export default async function handler(req, res) {
       newText = "👥 **لیست گروه‌های ما:**";
       newMarkup = {
         inline_keyboard: [
-          [{ text: "گروه اول گفتگوی اندیشه پهلویسم", url: "https://t.me/goftemanazadAp" }],
-          [{ text: "گروه 2 گفتگوی فروپاشی", url: "https://t.me/+6nIM1oBqTaVjNzYy" }],
-          [{ text: "گروه 3 تلنگر", url: "https://t.me/+Vad19Bh1UAxmYTYy" }],
-          [{ text: "گروه 4 گپ شبانه", url: "https://t.me/+j9Xnb05ntcVmM2Ni" }],
-          [{ text: "گروه 5 گروه عکس و استیکر اندیشه پهلویسم", url: "https://t.me/pic_gifpahlavi_r" }],
-          [{ text: "🔙 بازگشت به منوی اصلی", callback_data: "main_menu" }]
+          [{ text: "گفتگوی اندیشه پهلویسم", url: "https://t.me/goftemanazadAp" }],
+          [{ text: "گفتگوی فروپاشی", url: "https://t.me/+6nIM1oBqTaVjNzYy" }],
+          [{ text: "تلنگر", url: "https://t.me/+Vad19Bh1UAxmYTYy" }],
+          [{ text: "گپ شبانه", url: "https://t.me/+j9Xnb05ntcVmM2Ni" }],
+          [{ text: "عکس و استیکر اندیشه پهلویسم", url: "https://t.me/pic_gifpahlavi_r" }],
+          [{ text: "🔙 بازگشت", callback_data: "main_menu" }]
         ]
       };
     }
@@ -63,9 +63,9 @@ export default async function handler(req, res) {
       newText = "📞 **گروه‌های ارتباط:**";
       newMarkup = {
         inline_keyboard: [
-          [{ text: "گروه ارتباط اندیشه پهلویسم", url: "https://t.me/+aaJQcUU7ZIMyZWQ8" }],
-          [{ text: "گروه ارتباط فرو پاشی", url: "https://t.me/+GZOW85iRkX45ODJi" }],
-          [{ text: "🔙 بازگشت به منوی اصلی", callback_data: "main_menu" }]
+          [{ text: "ارتباط اندیشه پهلویسم", url: "https://t.me/+aaJQcUU7ZIMyZWQ8" }],
+          [{ text: "ارتباط فرو پاشی", url: "https://t.me/+GZOW85iRkX45ODJi" }],
+          [{ text: "🔙 بازگشت", callback_data: "main_menu" }]
         ]
       };
     }
@@ -73,7 +73,7 @@ export default async function handler(req, res) {
       newText = "📜 **قوانین و مقررات:**\n\n۱. استفاده از کلمات رکیک و توهین ممنوع است.\n۲. ارسال هرگونه لینک و تبلیغات اکیداً ممنوع است.\n۳. سیستم به صورت خودکار پیام‌های تکراری و لینک‌ها را حذف می‌کند.\n۴. لطفاً نظم گروه را رعایت کنید.";
       newMarkup = {
         inline_keyboard: [
-          [{ text: "🔙 بازگشت به منوی اصلی", callback_data: "main_menu" }]
+          [{ text: "🔙 بازگشت", callback_data: "main_menu" }]
         ]
       };
     }
@@ -114,8 +114,8 @@ export default async function handler(req, res) {
       chat_id: chatId,
       text: "👋 دکمه‌ی دسترسی سریع به منو، به قسمت پایین (بخش تایپ) اضافه شد. 👇",
       reply_markup: {
-        keyboard: [[{ text: "📋 منوی اصلی" }]], // این دکمه همیشه پایین می‌ماند
-        resize_keyboard: true // برای اینکه دکمه اندازه مناسبی داشته باشد
+        keyboard: [[{ text: "📋 منوی اصلی" }]], 
+        resize_keyboard: true 
       }
     });
     return res.status(200).send('OK');
@@ -146,7 +146,6 @@ export default async function handler(req, res) {
     const KV_URL = process.env.KV_REST_API_URL;
     const KV_TOKEN = process.env.KV_REST_API_TOKEN;
     
-    // ضد تکرار
     if (KV_URL && KV_TOKEN && text.length > 15) {
         const uniqueKey = "text_" + text.substring(0, 50).replace(/\s/g, '');
         const checkRes = await fetch(`${KV_URL}/get/${encodeURIComponent(uniqueKey)}`, {
@@ -164,8 +163,7 @@ export default async function handler(req, res) {
         }
     }
 
-    // فیلتر کلمات و لینک
-    const badWordsRaw = ["چاکش", "گوه نخور", "کونی", "شاشزاده", "کون", "کص", "سس خرسی", "تام مورلی", "کسکش", "کوسکش", "کوصکش", "کصکش", "کیر", "کوس"];
+    const badWordsRaw = ["جاکش", "گوه نخور", "کونی", "شاشزاده", "کون", "کص", "سس خرسی", "تام مورلی", "کسکش", "کوسکش", "کوصکش", "کصکش", "کیر", "کوس"];
     const hasBadWord = badWordsRaw.some(w => text.includes(w));
     const linkRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,})|(@[a-zA-Z0-9_]+)/i;
 
