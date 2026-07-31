@@ -138,7 +138,7 @@ export default async function handler(req, res) {
         }
     }
 
-    const badWordsRaw = ["جنده", "گوه نخور", "کونی", "شاشزاده", "کون", "کص", "سس خرسی", "تام مورلی", "کسکش", "کوسکش", "کوصکش", "کصکش", "کیر", "کوس"];
+    const badWordsRaw = ["احمق", "بیشعور", "کلاهبرداری", "شاشزاده", "کون", "کص", "سس خرسی", "تام مورلی", "کسکش", "کوسکش", "کوصکش", "کصکش", "کیر", "کوس"];
     const hasBadWord = badWordsRaw.some(w => text.includes(w));
     const linkRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,})|(@[a-zA-Z0-9_]+)/i;
 
@@ -149,7 +149,7 @@ export default async function handler(req, res) {
   }
 
   // ==========================================
-  // 🧠 بخش سوم: هوش مصنوعی جمینای (آپدیت به مدل 2.5-flash)
+  // 🧠 بخش سوم: هوش مصنوعی جمینای (آدرس هوشمند Latest)
   // ==========================================
   if (text.startsWith("رباتی")) {
     const userPrompt = text.replace("رباتی", "").trim();
@@ -162,8 +162,8 @@ export default async function handler(req, res) {
       try {
         const geminiKey = process.env.GEMINI_API_KEY;
         
-        // 🚀 تغییر آدرس بر اساس خروجی اکانت شما (استفاده از v1beta و مدل gemini-2.5-flash)
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`;
+        // 🚀 تغییر آدرس به gemini-1.5-flash-latest (تایید شده برای تمام کاربران جدید)
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${geminiKey}`;
         
         const aiResponse = await fetch(geminiUrl, {
           method: 'POST',
@@ -178,7 +178,7 @@ export default async function handler(req, res) {
           finalAnswer = `❌ خطای گوگل: ${aiData.error.message}`;
         } else if (aiData.candidates && aiData.candidates.length > 0) {
           finalAnswer = aiData.candidates[0].content.parts[0].text;
-          finalAnswer = finalAnswer.replace(/\*\*/g, ""); // حذف بولدهای اضافه گوگل
+          finalAnswer = finalAnswer.replace(/\*\*/g, ""); 
         } else {
           finalAnswer = "متاسفانه گوگل جواب درستی نداد.";
         }
