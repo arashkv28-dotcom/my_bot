@@ -162,8 +162,7 @@ export default async function handler(req, res) {
       try {
         const geminiKey = process.env.GEMINI_API_KEY;
         
-        // 🚀 تغییر آدرس به gemini-1.5-flash-latest (تایید شده برای تمام کاربران جدید)
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${geminiKey}`;
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-001:generateContent?key=${GEMINI_API_KEY}`,
         
         const aiResponse = await fetch(geminiUrl, {
           method: 'POST',
