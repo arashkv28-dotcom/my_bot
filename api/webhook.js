@@ -138,7 +138,7 @@ export default async function handler(req, res) {
         }
     }
 
-    const badWordsRaw = ["احمق", "بیشعور", "کلاهبرداری", "شاشزاده", "کون", "کص", "سس خرسی", "تام مورلی", "کسکش", "کوسکش", "کوصکش", "کصکش", "کیر", "کوس"];
+    const badWordsRaw = ["گوه نخور", "جنده", "کونی", "شاشزاده", "کون", "کص", "سس خرسی", "تام مورلی", "کسکش", "کوسکش", "کوصکش", "کصکش", "کیر", "کوس"];
     const hasBadWord = badWordsRaw.some(w => text.includes(w));
     const linkRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,})|(@[a-zA-Z0-9_]+)/i;
 
@@ -162,7 +162,8 @@ export default async function handler(req, res) {
       try {
         const geminiKey = process.env.GEMINI_API_KEY;
         
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-001:generateContent?key=${GEMINI_API_KEY}`,
+        // 🚀 تغییر آدرس به gemini-1.5-flash-latest (تایید شده برای تمام کاربران جدید)
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${geminiKey}`;
         
         const aiResponse = await fetch(geminiUrl, {
           method: 'POST',
