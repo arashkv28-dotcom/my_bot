@@ -138,7 +138,7 @@ export default async function handler(req, res) {
         }
     }
 
-    const badWordsRaw = ["احمق", "بیشعور", "کلاهبرداری", "شاشزاده", "کون", "کص", "سس خرسی", "تام مورلی", "کسکش", "کوسکش", "کوصکش", "کصکش", "کیر", "کوس"];
+    const badWordsRaw = ["جنده", "گوه نخور", "کونی", "شاشزاده", "کون", "کص", "سس خرسی", "تام مورلی", "کسکش", "کوسکش", "کوصکش", "کصکش", "کیر", "کوس"];
     const hasBadWord = badWordsRaw.some(w => text.includes(w));
     const linkRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,})|(@[a-zA-Z0-9_]+)/i;
 
@@ -149,21 +149,21 @@ export default async function handler(req, res) {
   }
 
   // ==========================================
-  // 🧠 بخش سوم: هوش مصنوعی جمینای (آدرس پایدار v1)
+  // 🧠 بخش سوم: هوش مصنوعی جمینای (آپدیت به مدل 2.5-flash)
   // ==========================================
   if (text.startsWith("رباتی")) {
     const userPrompt = text.replace("رباتی", "").trim();
     
     if (userPrompt.length > 0) {
-      let waitRes = await tgApi('sendMessage', { chat_id: chatId, text: "🧠 در حال پردازش...", reply_to_message_id: messageId });
+      let waitRes = await tgApi('sendMessage', { chat_id: chatId, text: "🧠 در حال تفکر...", reply_to_message_id: messageId });
       let waitData = await waitRes.json();
       let waitMsgId = waitData.ok ? waitData.result.message_id : null;
 
       try {
         const geminiKey = process.env.GEMINI_API_KEY;
         
-        // 🚀 استفاده از نسخه اصلی و پایدار (v1) و مدل رسمی gemini-1.5-flash
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
+        // 🚀 تغییر آدرس بر اساس خروجی اکانت شما (استفاده از v1beta و مدل gemini-2.5-flash)
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`;
         
         const aiResponse = await fetch(geminiUrl, {
           method: 'POST',
@@ -178,13 +178,7 @@ export default async function handler(req, res) {
           finalAnswer = `❌ خطای گوگل: ${aiData.error.message}`;
         } else if (aiData.candidates && aiData.candidates.length > 0) {
           finalAnswer = aiData.candidates[0].content.parts[0].text;
-          // پاکسازی فرمت‌های اضافی برای جلوگیری از ارور تلگرام
-          finalAnswer = finalAnswer.replace(/\*\*/g, ""); 
-          
-          // جلوگیری از ارور طولانی شدن پیام در تلگرام
-          if (finalAnswer.length > 3900) {
-            finalAnswer = finalAnswer.substring(0, 3900) + "\n\n...(پاسخ طولانی شد)";
-          }
+          finalAnswer = finalAnswer.replace(/\*\*/g, ""); // حذف بولدهای اضافه گوگل
         } else {
           finalAnswer = "متاسفانه گوگل جواب درستی نداد.";
         }
@@ -194,7 +188,7 @@ export default async function handler(req, res) {
         }
       } catch (error) {
         if (waitMsgId) {
-          await tgApi('editMessageText', { chat_id: chatId, message_id: waitMsgId, text: "❌ ارتباط با سرور هوش مصنوعی قطع شد." });
+          await tgApi('editMessageText', { chat_id: chatId, message_id: waitMsgId, text: "❌ ارتباط با سرور گوگل قطع شد." });
         }
       }
       return res.status(200).send('OK');
