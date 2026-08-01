@@ -99,7 +99,7 @@ export default async function handler(req, res) {
   const messageId = message.message_id;
   const text = message.text;
 
-  const WHITELIST_IDS = [-1001977073229, 1922419923, 6990025961, 96431648, -1001678007720, 5443017337, 8097212518, 6604010059, 7452439235, 8108599040, 6491888510, 7738331590, -1002103959267, -1002080075722, -1002425222777];
+  const WHITELIST_IDS = [-1001977073229, 1922419923, 6990025961, 96431648, -1001678007720, 5443017337, 8097212518, 6604010059, 7452439235, 8108599040, 6491888510, 7738331590, -1002103959267, -1002080075722, 8934796975, -1002425222777];
   const userId = message.from ? message.from.id : null;
   const isExempt = WHITELIST_IDS.includes(userId) || req.body.channel_post;
   const isGroup = message.chat.type !== 'private';
