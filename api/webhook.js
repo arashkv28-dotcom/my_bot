@@ -3,7 +3,16 @@ export default async function handler(req, res) {
   if (!req.body) return res.status(200).send('OK');
   
   const BOT_TOKEN = process.env.BOT_TOKEN;
-  
+
+  // ❓ پاسخ سوالات متداول (اصلاح فرمت بولد تلگرام)
+  const FAQ_ANSWERS = {
+    faq_1: "🔹 *مجموعه شما چیست؟*\n\nما مجموعه‌ای شامل چند کانال و گروه هستیم که حول محور اندیشه پهلویسم و مباحث مرتبط فعالیت می‌کنند. از طریق منوی اصلی می‌تونید به همه‌ی کانال‌ها و گروه‌های ما دسترسی داشته باشید.",
+    faq_2: "🔹 *کانال‌ها کدام‌اند؟*\n\nبرای دیدن لیست کامل کانال‌های ما به بخش «📢 کانال های ما» در منوی اصلی مراجعه کنید.",
+    faq_3: "🔹 *گروه‌ها کدام‌اند؟*\n\nبرای دیدن لیست کامل گروه‌های ما به بخش «👥 گروه های ما» در منوی اصلی مراجعه کنید.",
+    faq_4: "🔹 *چطور ارتباط بگیرم؟*\n\nمی‌تونید از بخش «📞 گروه های ارتباط» در منوی اصلی استفاده کنید، یا از همین قسمت گزینه‌ی «📩 ارتباط با ما» رو انتخاب کنید تا مستقیماً با ما در تماس باشید.",
+    faq_5: "🔹 *قوانین چیست؟*\n\n۱. استفاده از کلمات رکیک و توهین ممنوع است.\n۲. ارسال هرگونه لینک و تبلیغات اکیداً ممنوع است.\n۳. سیستم به صورت خودکار پیام‌های تکراری و لینک‌ها را حذف می‌کند.\n۴. لطفاً نظم گروه را رعایت کنید."
+  };
+
   const tgApi = async (method, body) => {
     try {
       return await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/${method}`, {
@@ -29,18 +38,19 @@ export default async function handler(req, res) {
     let newMarkup = {};
 
     if (data === "main_menu") {
-      newText = "📌 **منوی اصلی مجموعه‌ها**\nلطفاً یکی از گزینه‌های زیر را انتخاب کنید:";
+      newText = "📌 *منوی اصلی مجموعه‌ها*\nلطفاً یکی از گزینه‌های زیر را انتخاب کنید:";
       newMarkup = {
         inline_keyboard: [
           [{ text: "📢 کانال های ما", callback_data: "menu_channels" }],
           [{ text: "👥 گروه های ما", callback_data: "menu_groups" }],
           [{ text: "📞 گروه های ارتباط", callback_data: "menu_contact" }],
-          [{ text: "📜 قوانین", callback_data: "menu_rules" }]
+          [{ text: "📜 قوانین", callback_data: "menu_rules" }],
+          [{ text: "💬 گفت‌وگو با ربات", callback_data: "menu_chat" }]
         ]
       };
     }
     else if (data === "menu_channels") {
-      newText = "📢 **لیست کانال‌های ما:**";
+      newText = "📢 *لیست کانال‌های ما:*";
       newMarkup = {
         inline_keyboard: [
           [{ text: "آرشیو جاویدنامان دیماه", url: "https://t.me/javidnam10_1404" }],
@@ -53,7 +63,7 @@ export default async function handler(req, res) {
       };
     }
     else if (data === "menu_groups") {
-      newText = "👥 **لیست گروه‌های ما:**";
+      newText = "👥 *لیست گروه‌های ما:*";
       newMarkup = {
         inline_keyboard: [
           [{ text: "گفتگوی اندیشه پهلویسم", url: "https://t.me/goftemanazadAp" }],
@@ -66,7 +76,7 @@ export default async function handler(req, res) {
       };
     }
     else if (data === "menu_contact") {
-      newText = "📞 **گروه‌های ارتباط:**";
+      newText = "📞 *گروه‌های ارتباط:*";
       newMarkup = {
         inline_keyboard: [
           [{ text: "ارتباط اندیشه پهلویسم", url: "https://t.me/+aaJQcUU7ZIMyZWQ8" }],
@@ -76,9 +86,47 @@ export default async function handler(req, res) {
       };
     }
     else if (data === "menu_rules") {
-      newText = "📜 **قوانین و مقررات:**\n\n۱. استفاده از کلمات رکیک و توهین ممنوع است.\n۲. ارسال هرگونه لینک و تبلیغات اکیداً ممنوع است.\n۳. سیستم به صورت خودکار پیام‌های تکراری و لینک‌ها را حذف می‌کند.\n۴. لطفاً نظم گروه را رعایت کنید.";
+      newText = "📜 *قوانین و مقررات:*\n\n۱. استفاده از کلمات رکیک و توهین ممنوع است.\n۲. ارسال هرگونه لینک و تبلیغات اکیداً ممنوع است.\n۳. سیستم به صورت خودکار پیام‌های تکراری و لینک‌ها را حذف می‌کند.\n۴. لطفاً نظم گروه را رعایت کنید.";
       newMarkup = {
         inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "main_menu" }]]
+      };
+    }
+    else if (data === "menu_chat") {
+      newText = "💬 *گفت‌وگو با ربات*\nچطور می‌تونم کمکتون کنم؟";
+      newMarkup = {
+        inline_keyboard: [
+          [{ text: "❓ سوالات متداول", callback_data: "menu_faq" }],
+          [{ text: "📩 ارتباط با ما", callback_data: "menu_contactus" }],
+          [{ text: "🔙 بازگشت", callback_data: "main_menu" }]
+        ]
+      };
+    }
+    else if (data === "menu_faq") {
+      newText = "❓ *سوالات متداول*\nیکی از سوالات زیر رو انتخاب کنید:";
+      newMarkup = {
+        inline_keyboard: [
+          [{ text: "مجموعه شما چیست؟", callback_data: "faq_1" }],
+          [{ text: "کانال‌ها کدام‌اند؟", callback_data: "faq_2" }],
+          [{ text: "گروه‌ها کدام‌اند؟", callback_data: "faq_3" }],
+          [{ text: "چطور ارتباط بگیرم؟", callback_data: "faq_4" }],
+          [{ text: "قوانین چیست؟", callback_data: "faq_5" }],
+          [{ text: "🔙 بازگشت", callback_data: "menu_chat" }]
+        ]
+      };
+    }
+    else if (FAQ_ANSWERS[data]) {
+      newText = FAQ_ANSWERS[data];
+      newMarkup = {
+        inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "menu_faq" }]]
+      };
+    }
+    else if (data === "menu_contactus") {
+      // 🔴 توجه: به جای آیدی زیر، آیدی واقعی خودتان را بنویسید (مثلاً @Arash)
+      newText = "📩 *ارتباط با ما*\nبرای تماس مستقیم با مدیریت مجموعه، پیام خودتون رو برای آیدی زیر ارسال کنید:\n\n👤 @Arash_Admin\n\nما در اولین فرصت پاسخ می‌دیم.";
+      newMarkup = {
+        inline_keyboard: [
+          [{ text: "🔙 بازگشت", callback_data: "menu_chat" }]
+        ]
       };
     }
 
@@ -99,7 +147,6 @@ export default async function handler(req, res) {
   const messageId = message.message_id;
   const text = message.text;
 
-  // 🔴 لیست سفید آپدیت شده (با آیدی‌های جدید)
   const WHITELIST_IDS = [
     1001977073229, 1922419923, 6990025961, 96431648, 
     -1001678007720, 8934796975, 5443017337, 8097212518, 6604010059, 
@@ -111,13 +158,12 @@ export default async function handler(req, res) {
   const userId = message.from ? message.from.id : null;
   const senderChatId = message.sender_chat ? message.sender_chat.id : null;
   
-  // 🚀 قانون جدیدِ مصونیت: چک کردنِ آیدی 777000 و فوروارد خودکار کانال
   const isExempt = 
     WHITELIST_IDS.includes(userId) || 
     WHITELIST_IDS.includes(senderChatId) || 
-    userId === 777000 || // ربات سیستمی تلگرام برای فوروارد
-    message.is_automatic_forward || // تیک رسمیِ تلگرام برای فوروارد از کانال به گروه
-    req.body.channel_post; // پیامِ مستقیم در خودِ کانال
+    userId === 777000 || 
+    message.is_automatic_forward || 
+    req.body.channel_post; 
 
   const isGroup = message.chat.type !== 'private';
 
@@ -131,13 +177,14 @@ export default async function handler(req, res) {
   if (text === "/menu" || text === "منو" || text === "📋 منوی اصلی") {
     if (isGroup) await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
     await tgApi('sendMessage', {
-      chat_id: chatId, text: "📌 **منوی اصلی مجموعه‌ها**\nلطفاً یکی از گزینه‌های زیر را انتخاب کنید:", parse_mode: "Markdown",
+      chat_id: chatId, text: "📌 *منوی اصلی مجموعه‌ها*\nلطفاً یکی از گزینه‌های زیر را انتخاب کنید:", parse_mode: "Markdown",
       reply_markup: {
         inline_keyboard: [
           [{ text: "📢 کانال های ما", callback_data: "menu_channels" }],
           [{ text: "👥 گروه های ما", callback_data: "menu_groups" }],
           [{ text: "📞 گروه های ارتباط", callback_data: "menu_contact" }],
-          [{ text: "📜 قوانین", callback_data: "menu_rules" }]
+          [{ text: "📜 قوانین", callback_data: "menu_rules" }],
+          [{ text: "💬 گفت‌وگو با ربات", callback_data: "menu_chat" }]
         ]
       }
     });
@@ -149,7 +196,6 @@ export default async function handler(req, res) {
     const KV_URL = process.env.KV_REST_API_URL;
     const KV_TOKEN = process.env.KV_REST_API_TOKEN;
     
-    // ۱. بررسی پیام‌های تکراری
     if (KV_URL && KV_TOKEN && text.length > 15) {
         const uniqueKey = "text_" + text.substring(0, 50).replace(/\s/g, '');
         try {
@@ -161,10 +207,9 @@ export default async function handler(req, res) {
           } else {
             await fetch(`${KV_URL}/set/${encodeURIComponent(uniqueKey)}/1/EX/86400`, { headers: { Authorization: `Bearer ${KV_TOKEN}` } });
           }
-        } catch (e) { /* نادیده گرفتن ارور موقت دیتابیس */ }
+        } catch (e) { }
     }
 
-    // ۲. بررسی کلمات رکیک و لینک‌ها
     const badWordsRaw = ["احمق", "بیشعور", "کلاهبرداری", "شاشزاده", "کون", "کص", "سس خرسی", "تام مورلی", "کسکش", "کوسکش", "کوصکش", "کصکش", "کیر", "کوس"];
     const hasBadWord = badWordsRaw.some(w => text.includes(w));
     const linkRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,})|(@[a-zA-Z0-9_]+)/i;
