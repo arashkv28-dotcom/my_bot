@@ -43,7 +43,7 @@ export default async function handler(req, res) {
       newText = "📢 **لیست کانال‌های ما:**";
       newMarkup = {
         inline_keyboard: [
-          [{ text: "آرشیو جاویدنامان دیماه", url: "https://t.me/javidnam10_1404" }], // کانال جدید اضافه شد
+          [{ text: "آرشیو جاویدنامان دیماه", url: "https://t.me/javidnam10_1404" }],
           [{ text: "عکس و استیکر اندیشه پهلویسم", url: "https://t.me/pic_gifpahlavi" }],
           [{ text: "اندیشه پهلویسم", url: "https://t.me/andishepahlavism" }],
           [{ text: "فروپاشی", url: "https://t.me/froopashee2" }],
@@ -99,9 +99,26 @@ export default async function handler(req, res) {
   const messageId = message.message_id;
   const text = message.text;
 
-  const WHITELIST_IDS = [-1001977073229, 1922419923, 6990025961, 96431648, -1001678007720, 5443017337, 8097212518, 6604010059, 7452439235, 8108599040, 6491888510, 7738331590, -1002103959267, -1002080075722, 8934796975, -1002425222777];
+  // 🔴 لیست سفید آپدیت شده (با آیدی‌های جدید)
+  const WHITELIST_IDS = [
+    1001977073229, 1922419923, 6990025961, 96431648, 
+    -1001678007720, 8934796975, 5443017337, 8097212518, 6604010059, 
+    7452439235, 8108599040, 6491888510, 7738331590, 
+    -1002103959267, -1002080075722, -1002425222777,
+    1528824508
+  ];
+  
   const userId = message.from ? message.from.id : null;
-  const isExempt = WHITELIST_IDS.includes(userId) || req.body.channel_post;
+  const senderChatId = message.sender_chat ? message.sender_chat.id : null;
+  
+  // 🚀 قانون جدیدِ مصونیت: چک کردنِ آیدی 777000 و فوروارد خودکار کانال
+  const isExempt = 
+    WHITELIST_IDS.includes(userId) || 
+    WHITELIST_IDS.includes(senderChatId) || 
+    userId === 777000 || // ربات سیستمی تلگرام برای فوروارد
+    message.is_automatic_forward || // تیک رسمیِ تلگرام برای فوروارد از کانال به گروه
+    req.body.channel_post; // پیامِ مستقیم در خودِ کانال
+
   const isGroup = message.chat.type !== 'private';
 
   // --- دکمه‌های احضار منو ---
@@ -127,7 +144,7 @@ export default async function handler(req, res) {
     return res.status(200).send('OK');
   }
 
-  // --- سیستم امنیتی (حذف لینک، فحش و پیام تکراری) ---
+  // --- سیستم امنیتی (حذف لینک، فحش و پیام تکراری برای کاربران غیرمجاز) ---
   if (!isExempt && isGroup) {
     const KV_URL = process.env.KV_REST_API_URL;
     const KV_TOKEN = process.env.KV_REST_API_TOKEN;
@@ -148,7 +165,7 @@ export default async function handler(req, res) {
     }
 
     // ۲. بررسی کلمات رکیک و لینک‌ها
-    const badWordsRaw = ["گوه نخور", "جنده", "کونی", "شاشزاده", "کون", "کص", "سس خرسی", "تام مورلی", "کسکش", "کوسکش", "کوصکش", "کصکش", "کیر", "کوس"];
+    const badWordsRaw = ["احمق", "بیشعور", "کلاهبرداری", "شاشزاده", "کون", "کص", "سس خرسی", "تام مورلی", "کسکش", "کوسکش", "کوصکش", "کصکش", "کیر", "کوس"];
     const hasBadWord = badWordsRaw.some(w => text.includes(w));
     const linkRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,})|(@[a-zA-Z0-9_]+)/i;
 
