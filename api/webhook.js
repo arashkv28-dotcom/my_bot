@@ -3,9 +3,14 @@ export default async function handler(req, res) {
   if (!req.body) return res.status(200).send('OK');
   
   const BOT_TOKEN = process.env.BOT_TOKEN;
-  const ADMIN_IDS = process.env.ADMIN_IDS ? process.env.ADMIN_IDS.split(',').map(id => parseInt(id.trim())) : [];
+  
+  // خواندن آیدی ادمین‌ها
+  const ADMIN_IDS = process.env.ADMIN_IDS 
+    ? process.env.ADMIN_IDS.split(',').map(id => parseInt(id.trim())) 
+    : [];
 
-  // ❓ پاسخ سوالات متداول
+  console.log('ADMIN_IDS:', ADMIN_IDS); // برای دیباگ
+
   const FAQ_ANSWERS = {
     faq_1: "🔹 *مجموعه شما چیست؟*\n\n*ما مجموعه‌ای شامل چند کانال و گروه هستیم که حول محور اندیشه پهلویسم، مسائل روز، اخبار، و مباحث مرتبط سیاسی فعالیت می‌کنند. از طریق منوی اصلی می‌تونید به همه‌ی کانال‌ها و گروه‌های ما دسترسی داشته باشید.*",
     faq_2: "🔹 *کانال‌ها کدام‌اند؟*\n\n*برای دیدن لیست کامل کانال‌های ما به بخش «📢 کانال های ما» در منوی اصلی مراجعه کنید.*",
@@ -16,12 +21,14 @@ export default async function handler(req, res) {
 
   const tgApi = async (method, body) => {
     try {
-      return await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/${method}`, {
+      const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/${method}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       });
+      return response;
     } catch (e) {
+      console.error('tgApi error:', e);
       return null;
     }
   };
@@ -31,7 +38,6 @@ export default async function handler(req, res) {
   const KV_URL = process.env.KV_REST_API_URL;
   const KV_TOKEN = process.env.KV_REST_API_TOKEN;
 
-  // ذخیره اطلاعات گروه در KV
   const saveGroupToKV = async (chatId, chatTitle, chatUsername) => {
     if (!KV_URL || !KV_TOKEN) return;
     try {
@@ -44,20 +50,22 @@ export default async function handler(req, res) {
       await fetch(`${KV_URL}/set/group_${chatId}/${encodeURIComponent(groupData)}`, {
         headers: { Authorization: `Bearer ${KV_TOKEN}` }
       });
-    } catch (e) {}
+    } catch (e) {
+      console.error('saveGroupToKV error:', e);
+    }
   };
 
-  // حذف گروه از KV
   const removeGroupFromKV = async (chatId) => {
     if (!KV_URL || !KV_TOKEN) return;
     try {
       await fetch(`${KV_URL}/del/group_${chatId}`, {
         headers: { Authorization: `Bearer ${KV_TOKEN}` }
       });
-    } catch (e) {}
+    } catch (e) {
+      console.error('removeGroupFromKV error:', e);
+    }
   };
 
-  // دریافت لیست تمام گروه‌ها از KV
   const getAllGroupsFromKV = async () => {
     if (!KV_URL || !KV_TOKEN) return [];
     try {
@@ -82,12 +90,13 @@ export default async function handler(req, res) {
       }
       return groups;
     } catch (e) {
+      console.error('getAllGroupsFromKV error:', e);
       return [];
     }
   };
 
   // ==========================================
-  // 🎛️ بخش اول: دکمه‌های شیشه‌ای (منوها)
+  // 🎛️ Callback Query Handler
   // ==========================================
   if (req.body.callback_query) {
     const callbackQuery = req.body.callback_query;
@@ -95,6 +104,8 @@ export default async function handler(req, res) {
     const messageId = callbackQuery.message.message_id;
     const data = callbackQuery.data;
     const userId = callbackQuery.from.id;
+
+    console.log('User ID:', userId, 'Admin IDs:', ADMIN_IDS, 'Is Admin:', ADMIN_IDS.includes(userId));
 
     let newText = "";
     let newMarkup = {};
@@ -195,9 +206,6 @@ export default async function handler(req, res) {
         ]
       };
     }
-    // ==========================================
-    // ⚙️ بخش مدیریت گروه‌ها (فقط برای ادمین‌ها)
-    // ==========================================
     else if (data === "admin_manage") {
       if (!isAdmin) {
         await tgApi('answerCallbackQuery', { 
@@ -246,7 +254,7 @@ export default async function handler(req, res) {
       const group = groups.find(g => g.id.toString() === groupId);
 
       if (!group) {
-        newText = "❌ *گروه مورد نظر یافت نشد!*\n\n_احتمالاً ربات از این گروه خارج شده است._";
+        newText = "❌ *گروه مورد نظر یافت نشد!*";
         newMarkup = {
           inline_keyboard: [[{ text: "🔙 بازگشت به لیست", callback_data: "admin_manage" }]]
         };
@@ -257,7 +265,7 @@ export default async function handler(req, res) {
         newText += `🆔 *شناسه:* \`${group.id}\`\n`;
         newText += `👤 *یوزرنیم:* ${group.username ? '@' + group.username : '❌ ندارد'}\n`;
         newText += `📅 *تاریخ عضویت:* ${joinDate}\n\n`;
-        newText += `⚠️ *با کلیک روی دکمه زیر، ربات از این گروه خارج می‌شود و دیگر نمی‌تواند پیام‌ها را مدیریت کند.*`;
+        newText += `⚠️ *با کلیک روی دکمه زیر، ربات از این گروه خارج می‌شود.*`;
         
         newMarkup = {
           inline_keyboard: [
@@ -279,7 +287,6 @@ export default async function handler(req, res) {
 
       const groupId = data.replace("delete_", "");
       
-      // نمایش صفحه تایید
       newText = `⚠️ *تایید حذف*\n\n*آیا مطمئن هستید که می‌خواهید ربات را از این گروه خارج کنید؟*\n\n_این عملیات غیرقابل بازگشت است!_`;
       newMarkup = {
         inline_keyboard: [
@@ -302,7 +309,6 @@ export default async function handler(req, res) {
 
       const groupId = data.replace("confirm_delete_", "");
       
-      // تلاش برای ترک گروه
       const leaveRes = await tgApi('leaveChat', { chat_id: parseInt(groupId) });
       
       if (leaveRes) {
@@ -317,8 +323,8 @@ export default async function handler(req, res) {
             show_alert: false 
           });
         } else {
-          newText = `❌ *خطا در خروج از گروه*\n\n\`${leaveData.description || 'خطای نامشخص'}\`\n\n_احتمالاً ربات قبلاً از این گروه خارج شده است._`;
-          await removeGroupFromKV(groupId); // حذف از لیست حتی در صورت خطا
+          newText = `❌ *خطا در خروج از گروه*\n\n\`${leaveData.description || 'خطای نامشخص'}\``;
+          await removeGroupFromKV(groupId);
         }
       } else {
         newText = "❌ *خطا در ارتباط با سرور تلگرام*";
@@ -343,7 +349,7 @@ export default async function handler(req, res) {
   }
 
   // ==========================================
-  // 🛡️ بخش دوم: مدیریت پیام‌ها و امنیت
+  // 🛡️ Message Handler
   // ==========================================
   const message = req.body.message || req.body.channel_post;
   if (!message) return res.status(200).send('OK');
@@ -352,13 +358,14 @@ export default async function handler(req, res) {
   const messageId = message.message_id;
   const text = message.text || "";
   const isGroup = message.chat.type !== 'private';
+  const userId = message.from ? message.from.id : null;
 
-  // ذخیره اطلاعات گروه جدید
+  console.log('Message from User ID:', userId);
+
   if (isGroup && message.chat.title) {
     await saveGroupToKV(chatId, message.chat.title, message.chat.username);
   }
 
-  // 🚫 مقابله با حملات سایبری (حذف پیام‌های ورود و خروج)
   if (message.new_chat_members || message.left_chat_member) {
     await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
     return res.status(200).send('OK');
@@ -372,7 +379,6 @@ export default async function handler(req, res) {
     1528824508
   ];
   
-  const userId = message.from ? message.from.id : null;
   const senderChatId = message.sender_chat ? message.sender_chat.id : null;
   
   const isExempt = 
@@ -382,18 +388,19 @@ export default async function handler(req, res) {
     message.is_automatic_forward || 
     req.body.channel_post; 
 
-  // --- دکمه‌های احضار منو ---
   if (text === "/start") {
     if (isGroup) await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
     
     const isAdmin = ADMIN_IDS.includes(userId);
+    console.log('Is Admin on /start:', isAdmin);
+    
     const keyboard = isAdmin 
       ? [[{ text: "📋 منوی اصلی" }], [{ text: "⚙️ مدیریت گروه‌ها" }]]
       : [[{ text: "📋 منوی اصلی" }]];
     
     await tgApi('sendMessage', { 
       chat_id: chatId, 
-      text: "👋 *خوش آمدید!*\n\nدکمه‌های دسترسی سریع برای شما فعال شد. 👇", 
+      text: `👋 *خوش آمدید!*\n\n${isAdmin ? '🔑 شما ادمین هستید.\n\n' : ''}دکمه‌های دسترسی سریع برای شما فعال شد. 👇`, 
       parse_mode: "Markdown",
       reply_markup: { keyboard, resize_keyboard: true } 
     });
@@ -424,7 +431,6 @@ export default async function handler(req, res) {
     return res.status(200).send('OK');
   }
 
-  // دستور مخصوص ادمین برای مدیریت گروه‌ها
   if ((text === "/admin" || text === "⚙️ مدیریت گروه‌ها") && ADMIN_IDS.includes(userId)) {
     if (isGroup) await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
     
@@ -463,12 +469,10 @@ export default async function handler(req, res) {
     return res.status(200).send('OK');
   }
 
-  // --- سیستم امنیتی هوشمند (برای کاربران غیرمجاز) ---
   if (!isExempt && isGroup) {
     let isSpam = false;
     let warningMessage = "";
 
-    // ۱. بررسی پیام‌های تکراری (متن، عکس، ویدیو)
     if (KV_URL && KV_TOKEN) {
         let uniqueKey = null;
 
@@ -494,7 +498,6 @@ export default async function handler(req, res) {
         }
     }
 
-    // ۲. بررسی کلمات رکیک و لینک‌ها
     const badWordsRaw = ["احمق", "بیشعور", "کلاهبرداری", "شاشزاده", "کون", "کص", "سس خرسی", "تام مورلی", "کسکش", "کوسکش", "کوصکش", "کصکش", "کیر", "کوس"];
     const hasBadWord = text ? badWordsRaw.some(w => text.includes(w)) : false;
     const linkRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,})|(@[a-zA-Z0-9_]+)/i;
@@ -505,7 +508,6 @@ export default async function handler(req, res) {
         warningMessage = hasLink ? `⚠️ ارسال لینک و تبلیغات در این گروه ممنوع است!` : `⚠️ استفاده از کلمات نامناسب ممنوع است!`;
     }
 
-    // ۳. عملیات پاکسازی و ارسال اخطار موقت (7 ثانیه)
     if (isSpam) {
       await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
       
