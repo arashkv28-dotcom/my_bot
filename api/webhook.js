@@ -3,7 +3,7 @@ export default async function handler(req, res) {
   if (!req.body) return res.status(200).send('OK');
   
   const BOT_TOKEN = process.env.BOT_TOKEN;
-  const ADMIN_IDS = process.env.ADMIN_IDS ? process.env.ADMIN_IDS.split(',').map(id => parseInt(id.trim())) : []; // آیدی ادمین‌های اصلی
+  const ADMIN_IDS = process.env.ADMIN_IDS ? process.env.ADMIN_IDS.split(',').map(id => parseInt(id.trim())) : [];
 
   // ❓ پاسخ سوالات متداول
   const FAQ_ANSWERS = {
@@ -26,10 +26,8 @@ export default async function handler(req, res) {
     }
   };
 
-  // تابع ایجاد تاخیر زمانی
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-  // KV Database برای ذخیره لیست گروه‌ها
   const KV_URL = process.env.KV_REST_API_URL;
   const KV_TOKEN = process.env.KV_REST_API_TOKEN;
 
@@ -101,7 +99,6 @@ export default async function handler(req, res) {
     let newText = "";
     let newMarkup = {};
 
-    // بررسی دسترسی ادمین برای منوی مدیریت
     const isAdmin = ADMIN_IDS.includes(userId);
 
     if (data === "main_menu") {
@@ -214,27 +211,27 @@ export default async function handler(req, res) {
       const groups = await getAllGroupsFromKV();
       
       if (groups.length === 0) {
-        newText = "📋 *مدیریت گروه‌ها*\n\n*هیچ گروهی ثبت نشده است.*";
+        newText = "📋 *مدیریت گروه‌ها*\n\n❌ *هیچ گروهی ثبت نشده است.*\n\n_ربات را به گروه‌های مورد نظر اضافه کنید تا اینجا لیست شوند._";
         newMarkup = {
-          inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "main_menu" }]]
+          inline_keyboard: [[{ text: "🔙 بازگشت به منو", callback_data: "main_menu" }]]
         };
       } else {
-        newText = `📋 *مدیریت گروه‌ها*\n\n*تعداد گروه‌های ثبت شده: ${groups.length}*\n\nروی هر گروه کلیک کنید تا جزئیات و گزینه‌های مدیریت را ببینید:`;
+        newText = `📋 *مدیریت گروه‌ها*\n\n✅ *تعداد گروه‌های ثبت شده:* ${groups.length}\n\n_روی هر گروه کلیک کنید تا گزینه‌های مدیریت را ببینید:_`;
         
         const groupButtons = groups.map(g => [{
-          text: `${g.title} (${g.id})`,
-          callback_data: `admin_group_${g.id}`
+          text: `📍 ${g.title}`,
+          callback_data: `view_${g.id}`
         }]);
         
         newMarkup = {
           inline_keyboard: [
             ...groupButtons,
-            [{ text: "🔙 بازگشت", callback_data: "main_menu" }]
+            [{ text: "🔙 بازگشت به منو", callback_data: "main_menu" }]
           ]
         };
       }
     }
-    else if (data.startsWith("admin_group_")) {
+    else if (data.startsWith("view_")) {
       if (!isAdmin) {
         await tgApi('answerCallbackQuery', { 
           callback_query_id: callbackQuery.id, 
@@ -244,28 +241,33 @@ export default async function handler(req, res) {
         return res.status(200).send('OK');
       }
 
-      const groupId = data.replace("admin_group_", "");
+      const groupId = data.replace("view_", "");
       const groups = await getAllGroupsFromKV();
       const group = groups.find(g => g.id.toString() === groupId);
 
       if (!group) {
-        newText = "❌ گروه مورد نظر یافت نشد!";
+        newText = "❌ *گروه مورد نظر یافت نشد!*\n\n_احتمالاً ربات از این گروه خارج شده است._";
         newMarkup = {
-          inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "admin_manage" }]]
+          inline_keyboard: [[{ text: "🔙 بازگشت به لیست", callback_data: "admin_manage" }]]
         };
       } else {
-        const joinDate = new Date(group.joinedAt).toLocaleString('fa-IR');
-        newText = `📊 *اطلاعات گروه*\n\n*نام:* ${group.title}\n*ID:* \`${group.id}\`\n*یوزرنیم:* ${group.username ? '@' + group.username : 'ندارد'}\n*تاریخ عضویت:* ${joinDate}`;
+        const joinDate = new Date(group.joinedAt).toLocaleString('fa-IR', { timeZone: 'Asia/Tehran' });
+        newText = `📊 *اطلاعات گروه*\n\n`;
+        newText += `📌 *نام گروه:* ${group.title}\n`;
+        newText += `🆔 *شناسه:* \`${group.id}\`\n`;
+        newText += `👤 *یوزرنیم:* ${group.username ? '@' + group.username : '❌ ندارد'}\n`;
+        newText += `📅 *تاریخ عضویت:* ${joinDate}\n\n`;
+        newText += `⚠️ *با کلیک روی دکمه زیر، ربات از این گروه خارج می‌شود و دیگر نمی‌تواند پیام‌ها را مدیریت کند.*`;
         
         newMarkup = {
           inline_keyboard: [
-            [{ text: "🚪 خروج از گروه", callback_data: `admin_leave_${groupId}` }],
-            [{ text: "🔙 بازگشت", callback_data: "admin_manage" }]
+            [{ text: "🗑 حذف و خروج از گروه", callback_data: `delete_${groupId}` }],
+            [{ text: "🔙 بازگشت به لیست", callback_data: "admin_manage" }]
           ]
         };
       }
     }
-    else if (data.startsWith("admin_leave_")) {
+    else if (data.startsWith("delete_")) {
       if (!isAdmin) {
         await tgApi('answerCallbackQuery', { 
           callback_query_id: callbackQuery.id, 
@@ -275,17 +277,51 @@ export default async function handler(req, res) {
         return res.status(200).send('OK');
       }
 
-      const groupId = data.replace("admin_leave_", "");
+      const groupId = data.replace("delete_", "");
+      
+      // نمایش صفحه تایید
+      newText = `⚠️ *تایید حذف*\n\n*آیا مطمئن هستید که می‌خواهید ربات را از این گروه خارج کنید؟*\n\n_این عملیات غیرقابل بازگشت است!_`;
+      newMarkup = {
+        inline_keyboard: [
+          [
+            { text: "✅ بله، خارج شو", callback_data: `confirm_delete_${groupId}` },
+            { text: "❌ انصراف", callback_data: `view_${groupId}` }
+          ]
+        ]
+      };
+    }
+    else if (data.startsWith("confirm_delete_")) {
+      if (!isAdmin) {
+        await tgApi('answerCallbackQuery', { 
+          callback_query_id: callbackQuery.id, 
+          text: "⛔️ شما دسترسی ادمین ندارید!", 
+          show_alert: true 
+        });
+        return res.status(200).send('OK');
+      }
+
+      const groupId = data.replace("confirm_delete_", "");
       
       // تلاش برای ترک گروه
       const leaveRes = await tgApi('leaveChat', { chat_id: parseInt(groupId) });
-      const leaveData = await leaveRes.json();
       
-      if (leaveData.ok) {
-        await removeGroupFromKV(groupId);
-        newText = "✅ *ربات با موفقیت از گروه خارج شد و از لیست حذف گردید.*";
+      if (leaveRes) {
+        const leaveData = await leaveRes.json();
+        
+        if (leaveData.ok) {
+          await removeGroupFromKV(groupId);
+          newText = "✅ *عملیات موفق*\n\n*ربات با موفقیت از گروه خارج شد و از لیست حذف گردید.*";
+          await tgApi('answerCallbackQuery', { 
+            callback_query_id: callbackQuery.id, 
+            text: "✅ ربات از گروه خارج شد", 
+            show_alert: false 
+          });
+        } else {
+          newText = `❌ *خطا در خروج از گروه*\n\n\`${leaveData.description || 'خطای نامشخص'}\`\n\n_احتمالاً ربات قبلاً از این گروه خارج شده است._`;
+          await removeGroupFromKV(groupId); // حذف از لیست حتی در صورت خطا
+        }
       } else {
-        newText = `❌ *خطا در خروج از گروه:*\n\`${leaveData.description || 'نامشخص'}\``;
+        newText = "❌ *خطا در ارتباط با سرور تلگرام*";
       }
       
       newMarkup = {
@@ -357,7 +393,8 @@ export default async function handler(req, res) {
     
     await tgApi('sendMessage', { 
       chat_id: chatId, 
-      text: "👋 دکمه‌های دسترسی سریع اضافه شد. 👇", 
+      text: "👋 *خوش آمدید!*\n\nدکمه‌های دسترسی سریع برای شما فعال شد. 👇", 
+      parse_mode: "Markdown",
       reply_markup: { keyboard, resize_keyboard: true } 
     });
     return res.status(200).send('OK');
@@ -397,22 +434,22 @@ export default async function handler(req, res) {
     let adminMarkup = {};
     
     if (groups.length === 0) {
-      adminText = "📋 *مدیریت گروه‌ها*\n\n*هیچ گروهی ثبت نشده است.*";
+      adminText = "📋 *مدیریت گروه‌ها*\n\n❌ *هیچ گروهی ثبت نشده است.*\n\n_ربات را به گروه‌های مورد نظر اضافه کنید تا اینجا لیست شوند._";
       adminMarkup = {
-        inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "main_menu" }]]
+        inline_keyboard: [[{ text: "🔙 بازگشت به منو", callback_data: "main_menu" }]]
       };
     } else {
-      adminText = `📋 *مدیریت گروه‌ها*\n\n*تعداد گروه‌های ثبت شده: ${groups.length}*\n\nروی هر گروه کلیک کنید:`;
+      adminText = `📋 *مدیریت گروه‌ها*\n\n✅ *تعداد گروه‌های ثبت شده:* ${groups.length}\n\n_روی هر گروه کلیک کنید:_`;
       
       const groupButtons = groups.map(g => [{
-        text: `${g.title}`,
-        callback_data: `admin_group_${g.id}`
+        text: `📍 ${g.title}`,
+        callback_data: `view_${g.id}`
       }]);
       
       adminMarkup = {
         inline_keyboard: [
           ...groupButtons,
-          [{ text: "🔙 بازگشت", callback_data: "main_menu" }]
+          [{ text: "🔙 بازگشت به منو", callback_data: "main_menu" }]
         ]
       };
     }
@@ -458,7 +495,7 @@ export default async function handler(req, res) {
     }
 
     // ۲. بررسی کلمات رکیک و لینک‌ها
-    const badWordsRaw = ["جنده", "خفه شو", "کونی", "شاشزاده", "کون", "کص", "سس خرسی", "تام مورلی", "کسکش", "کوسکش", "کوصکش", "کصکش", "کیر", "کوس"];
+    const badWordsRaw = ["احمق", "بیشعور", "کلاهبرداری", "شاشزاده", "کون", "کص", "سس خرسی", "تام مورلی", "کسکش", "کوسکش", "کوصکش", "کصکش", "کیر", "کوس"];
     const hasBadWord = text ? badWordsRaw.some(w => text.includes(w)) : false;
     const linkRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,})|(@[a-zA-Z0-9_]+)/i;
     const hasLink = text ? linkRegex.test(text) : false;
