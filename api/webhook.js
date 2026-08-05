@@ -38,14 +38,13 @@ export default async function handler(req, res) {
   // 🚫 توابع مدیریت بلک‌لیست
   // ==========================================
   
-  // اضافه کردن به بلک‌لیست
   const addToBlacklist = async (targetId, targetName, targetType, targetUsername = null) => {
     if (!KV_URL || !KV_TOKEN) return false;
     try {
       const blacklistData = JSON.stringify({ 
         id: targetId, 
         name: targetName,
-        type: targetType, // 'user', 'channel', 'group'
+        type: targetType,
         username: targetUsername,
         addedAt: Date.now()
       });
@@ -59,7 +58,6 @@ export default async function handler(req, res) {
     }
   };
 
-  // حذف از بلک‌لیست
   const removeFromBlacklist = async (targetId) => {
     if (!KV_URL || !KV_TOKEN) return false;
     try {
@@ -73,7 +71,6 @@ export default async function handler(req, res) {
     }
   };
 
-  // بررسی وجود در بلک‌لیست
   const isInBlacklist = async (targetId) => {
     if (!KV_URL || !KV_TOKEN) return false;
     try {
@@ -87,7 +84,6 @@ export default async function handler(req, res) {
     }
   };
 
-  // دریافت لیست کامل بلک‌لیست
   const getAllBlacklist = async () => {
     if (!KV_URL || !KV_TOKEN) return [];
     try {
@@ -117,10 +113,8 @@ export default async function handler(req, res) {
     }
   };
 
-  // دریافت اطلاعات کاربر از تلگرام
   const getUserInfo = async (username) => {
     try {
-      // تلاش برای دریافت اطلاعات از طریق getChat
       const chatRes = await tgApi('getChat', { chat_id: username });
       const chatData = await chatRes.json();
       
@@ -312,9 +306,6 @@ export default async function handler(req, res) {
         ]
       };
     }
-    // ==========================================
-    // 🚫 مدیریت بلک‌لیست
-    // ==========================================
     else if (data === "blacklist_manage") {
       if (!isAdmin) {
         await tgApi('answerCallbackQuery', { 
@@ -333,7 +324,6 @@ export default async function handler(req, res) {
           inline_keyboard: [[{ text: "🔙 بازگشت به منو", callback_data: "main_menu" }]]
         };
       } else {
-        // تفکیک بر اساس نوع
         const users = blacklist.filter(item => item.type === 'user');
         const channels = blacklist.filter(item => item.type === 'channel');
         const groups = blacklist.filter(item => item.type === 'group' || item.type === 'supergroup');
@@ -449,9 +439,6 @@ export default async function handler(req, res) {
         inline_keyboard: [[{ text: "🔙 بازگشت به لیست", callback_data: "blacklist_manage" }]]
       };
     }
-    // ==========================================
-    // ⚙️ مدیریت گروه‌ها
-    // ==========================================
     else if (data === "admin_manage") {
       if (!isAdmin) {
         await tgApi('answerCallbackQuery', { 
@@ -618,9 +605,42 @@ export default async function handler(req, res) {
   }
 
   // ==========================================
-  // 🚫 بررسی فوروارد از بلک‌لیست
+  // ✅ تعریف WHITELIST و بررسی معافیت - اول از همه!
   // ==========================================
-  if (isGroup) {
+  const WHITELIST_IDS = [
+    1001977073229, 1922419923, 6990025961, 96431648, 
+    -1001678007720, 8934796975, 5443017337, 8097212518, 6604010059, 
+    7452439235, 8108599040, 6491888510, 7738331590, 
+    -1002103959267, -1002080075722, -1002425222777,
+    1528824508
+  ];
+  
+  const senderChatId = message.sender_chat ? message.sender_chat.id : null;
+  
+  // بررسی معافیت از تمام سیستم‌های امنیتی
+  const isExempt = 
+    WHITELIST_IDS.includes(userId) || 
+    WHITELIST_IDS.includes(senderChatId) || 
+    WHITELIST_IDS.includes(chatId) || // اضافه کردن chatId برای گروه‌های وایت‌لیست
+    userId === 777000 || 
+    message.is_automatic_forward || 
+    req.body.channel_post ||
+    ADMIN_IDS.includes(userId); // ادمین‌ها هم معاف
+
+  console.log('Security Check:', {
+    userId,
+    senderChatId,
+    chatId,
+    isExempt,
+    isWhitelistedUser: WHITELIST_IDS.includes(userId),
+    isWhitelistedSender: WHITELIST_IDS.includes(senderChatId),
+    isWhitelistedChat: WHITELIST_IDS.includes(chatId)
+  });
+
+  // ==========================================
+  // 🚫 بررسی فوروارد از بلک‌لیست (فقط برای افراد غیرمعاف)
+  // ==========================================
+  if (isGroup && !isExempt) {
     let shouldDelete = false;
     let blacklistedSource = null;
 
@@ -671,12 +691,11 @@ export default async function handler(req, res) {
   // 🔧 دستورات ادمین در پی‌وی
   // ==========================================
   
-  // افزودن به بلک‌لیست از طریق فوروارد از کانال/گروه
   if (!isGroup && isAdmin && message.forward_from_chat) {
     const forwardFromId = message.forward_from_chat.id;
     const forwardFromTitle = message.forward_from_chat.title || message.forward_from_chat.username || 'نامشخص';
     const forwardFromUsername = message.forward_from_chat.username || null;
-    const forwardFromType = message.forward_from_chat.type; // channel, group, supergroup
+    const forwardFromType = message.forward_from_chat.type;
     
     const alreadyBlacklisted = await isInBlacklist(forwardFromId);
     
@@ -710,7 +729,6 @@ export default async function handler(req, res) {
     return res.status(200).send('OK');
   }
 
-  // افزودن به بلک‌لیست از طریق فوروارد از کاربر
   if (!isGroup && isAdmin && message.forward_from) {
     const forwardFromId = message.forward_from.id;
     const firstName = message.forward_from.first_name || '';
@@ -746,11 +764,8 @@ export default async function handler(req, res) {
     return res.status(200).send('OK');
   }
 
-  // افزودن به بلک‌لیست از طریق یوزرنیم (@username)
   if (!isGroup && isAdmin && text && text.startsWith('@') && text.length > 1) {
     const username = text.trim();
-    
-    // دریافت اطلاعات از تلگرام
     const userInfo = await getUserInfo(username);
     
     if (!userInfo) {
@@ -803,7 +818,6 @@ export default async function handler(req, res) {
     return res.status(200).send('OK');
   }
 
-  // افزودن به بلک‌لیست از طریق آیدی عددی
   if (!isGroup && isAdmin && text && /^-?\d+$/.test(text.trim())) {
     const targetId = parseInt(text.trim());
     
@@ -816,7 +830,6 @@ export default async function handler(req, res) {
         parse_mode: "Markdown"
       });
     } else {
-      // تشخیص نوع بر اساس آیدی (منفی = گروه/کانال، مثبت = کاربر)
       const targetType = targetId < 0 ? 'group' : 'user';
       const success = await addToBlacklist(targetId, `ID: ${targetId}`, targetType, null);
       
@@ -839,23 +852,6 @@ export default async function handler(req, res) {
     }
     return res.status(200).send('OK');
   }
-
-  const WHITELIST_IDS = [
-    1001977073229, 1922419923, 6990025961, 96431648, 
-    -1001678007720, 8934796975, 5443017337, 8097212518, 6604010059, 
-    7452439235, 8108599040, 6491888510, 7738331590, 
-    -1002103959267, -1002080075722, -1002425222777,
-    1528824508
-  ];
-  
-  const senderChatId = message.sender_chat ? message.sender_chat.id : null;
-  
-  const isExempt = 
-    WHITELIST_IDS.includes(userId) || 
-    WHITELIST_IDS.includes(senderChatId) || 
-    userId === 777000 || 
-    message.is_automatic_forward || 
-    req.body.channel_post; 
 
   if (text === "/start") {
     if (isGroup) await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
@@ -968,11 +964,14 @@ export default async function handler(req, res) {
     return res.status(200).send('OK');
   }
 
-  // سیستم امنیتی
+  // ==========================================
+  // 🛡️ سیستم امنیتی (فقط برای افراد غیرمعاف)
+  // ==========================================
   if (!isExempt && isGroup) {
     let isSpam = false;
     let warningMessage = "";
 
+    // ۱. بررسی پیام‌های تکراری
     if (KV_URL && KV_TOKEN) {
         let uniqueKey = null;
 
@@ -986,29 +985,39 @@ export default async function handler(req, res) {
 
         if (uniqueKey) {
             try {
-              const checkRes = await fetch(`${KV_URL}/get/${encodeURIComponent(uniqueKey)}`, { headers: { Authorization: `Bearer ${KV_TOKEN}` } });
+              const checkRes = await fetch(`${KV_URL}/get/${encodeURIComponent(uniqueKey)}`, { 
+                headers: { Authorization: `Bearer ${KV_TOKEN}` } 
+              });
               const checkData = await checkRes.json();
               if (checkData.result !== null) {
                 isSpam = true;
                 warningMessage = `⚠️ کاربر عزیز، ارسال پیام تکراری (اسپم) ممنوع است!`;
               } else {
-                await fetch(`${KV_URL}/set/${encodeURIComponent(uniqueKey)}/1/EX/86400`, { headers: { Authorization: `Bearer ${KV_TOKEN}` } });
+                await fetch(`${KV_URL}/set/${encodeURIComponent(uniqueKey)}/1/EX/86400`, { 
+                  headers: { Authorization: `Bearer ${KV_TOKEN}` } 
+                });
               }
-            } catch (e) { }
+            } catch (e) { 
+              console.error('Spam check error:', e);
+            }
         }
     }
 
-    const badWordsRaw = ["احمق", "بیشعور", "کلاهبرداری", "شاشزاده", "کون", "کص", "سس خرسی", "تام مورلی", "کسکش", "کوسکش", "کوصکش", "کصکش", "کیر", "کوس"];
+    // ۲. بررسی کلمات رکیک و لینک‌ها
+    const badWordsRaw = ["گوه نخور", "جنده", "کونی", "شاشزاده", "کون", "کص", "سس خرسی", "تام مورلی", "کسکش", "کوسکش", "کوصکش", "کصکش", "کیر", "کوس"];
     const hasBadWord = text ? badWordsRaw.some(w => text.includes(w)) : false;
     const linkRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,})|(@[a-zA-Z0-9_]+)/i;
     const hasLink = text ? linkRegex.test(text) : false;
 
     if (hasBadWord || hasLink) {
         isSpam = true;
-        warningMessage = hasLink ? `⚠️ ارسال لینک و تبلیغات در این گروه ممنوع است!` : `⚠️ استفاده از کلمات نامناسب ممنوع است!`;
+        warningMessage = hasLink 
+          ? `⚠️ ارسال لینک و تبلیغات در این گروه ممنوع است!` 
+          : `⚠️ استفاده از کلمات نامناسب ممنوع است!`;
     }
 
     if (isSpam) {
+      console.log('Spam detected from non-exempt user:', userId);
       await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
       
       let warnRes = await tgApi('sendMessage', { chat_id: chatId, text: warningMessage });
