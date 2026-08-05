@@ -3,13 +3,9 @@ export default async function handler(req, res) {
   if (!req.body) return res.status(200).send('OK');
   
   const BOT_TOKEN = process.env.BOT_TOKEN;
-  
-  // خواندن آیدی ادمین‌ها
   const ADMIN_IDS = process.env.ADMIN_IDS 
     ? process.env.ADMIN_IDS.split(',').map(id => parseInt(id.trim())) 
     : [];
-
-  console.log('ADMIN_IDS:', ADMIN_IDS); // برای دیباگ
 
   const FAQ_ANSWERS = {
     faq_1: "🔹 *مجموعه شما چیست؟*\n\n*ما مجموعه‌ای شامل چند کانال و گروه هستیم که حول محور اندیشه پهلویسم، مسائل روز، اخبار، و مباحث مرتبط سیاسی فعالیت می‌کنند. از طریق منوی اصلی می‌تونید به همه‌ی کانال‌ها و گروه‌های ما دسترسی داشته باشید.*",
@@ -38,6 +34,115 @@ export default async function handler(req, res) {
   const KV_URL = process.env.KV_REST_API_URL;
   const KV_TOKEN = process.env.KV_REST_API_TOKEN;
 
+  // ==========================================
+  // 🚫 توابع مدیریت بلک‌لیست
+  // ==========================================
+  
+  // اضافه کردن به بلک‌لیست
+  const addToBlacklist = async (targetId, targetName, targetType, targetUsername = null) => {
+    if (!KV_URL || !KV_TOKEN) return false;
+    try {
+      const blacklistData = JSON.stringify({ 
+        id: targetId, 
+        name: targetName,
+        type: targetType, // 'user', 'channel', 'group'
+        username: targetUsername,
+        addedAt: Date.now()
+      });
+      await fetch(`${KV_URL}/set/blacklist_${targetId}/${encodeURIComponent(blacklistData)}`, {
+        headers: { Authorization: `Bearer ${KV_TOKEN}` }
+      });
+      return true;
+    } catch (e) {
+      console.error('addToBlacklist error:', e);
+      return false;
+    }
+  };
+
+  // حذف از بلک‌لیست
+  const removeFromBlacklist = async (targetId) => {
+    if (!KV_URL || !KV_TOKEN) return false;
+    try {
+      await fetch(`${KV_URL}/del/blacklist_${targetId}`, {
+        headers: { Authorization: `Bearer ${KV_TOKEN}` }
+      });
+      return true;
+    } catch (e) {
+      console.error('removeFromBlacklist error:', e);
+      return false;
+    }
+  };
+
+  // بررسی وجود در بلک‌لیست
+  const isInBlacklist = async (targetId) => {
+    if (!KV_URL || !KV_TOKEN) return false;
+    try {
+      const checkRes = await fetch(`${KV_URL}/get/blacklist_${targetId}`, {
+        headers: { Authorization: `Bearer ${KV_TOKEN}` }
+      });
+      const checkData = await checkRes.json();
+      return checkData.result !== null;
+    } catch (e) {
+      return false;
+    }
+  };
+
+  // دریافت لیست کامل بلک‌لیست
+  const getAllBlacklist = async () => {
+    if (!KV_URL || !KV_TOKEN) return [];
+    try {
+      const keysRes = await fetch(`${KV_URL}/keys/blacklist_*`, {
+        headers: { Authorization: `Bearer ${KV_TOKEN}` }
+      });
+      const keysData = await keysRes.json();
+      
+      if (!keysData.result || keysData.result.length === 0) return [];
+      
+      const blacklist = [];
+      for (const key of keysData.result) {
+        const valueRes = await fetch(`${KV_URL}/get/${key}`, {
+          headers: { Authorization: `Bearer ${KV_TOKEN}` }
+        });
+        const valueData = await valueRes.json();
+        if (valueData.result) {
+          try {
+            blacklist.push(JSON.parse(valueData.result));
+          } catch (e) {}
+        }
+      }
+      return blacklist;
+    } catch (e) {
+      console.error('getAllBlacklist error:', e);
+      return [];
+    }
+  };
+
+  // دریافت اطلاعات کاربر از تلگرام
+  const getUserInfo = async (username) => {
+    try {
+      // تلاش برای دریافت اطلاعات از طریق getChat
+      const chatRes = await tgApi('getChat', { chat_id: username });
+      const chatData = await chatRes.json();
+      
+      if (chatData.ok) {
+        return {
+          id: chatData.result.id,
+          name: chatData.result.first_name || chatData.result.title || username,
+          username: chatData.result.username || null,
+          type: chatData.result.type === 'private' ? 'user' : chatData.result.type
+        };
+      }
+      return null;
+    } catch (e) {
+      console.error('getUserInfo error:', e);
+      return null;
+    }
+  };
+
+  // ==========================================
+  // 📊 توابع مدیریت گروه‌ها
+  // ==========================================
+  
   const saveGroupToKV = async (chatId, chatTitle, chatUsername) => {
     if (!KV_URL || !KV_TOKEN) return;
     try {
@@ -105,8 +210,6 @@ export default async function handler(req, res) {
     const data = callbackQuery.data;
     const userId = callbackQuery.from.id;
 
-    console.log('User ID:', userId, 'Admin IDs:', ADMIN_IDS, 'Is Admin:', ADMIN_IDS.includes(userId));
-
     let newText = "";
     let newMarkup = {};
 
@@ -121,7 +224,10 @@ export default async function handler(req, res) {
           [{ text: "📞 گروه های ارتباط", callback_data: "menu_contact" }],
           [{ text: "📜 قوانین", callback_data: "menu_rules" }],
           [{ text: "💬 گفت‌وگو با ربات", callback_data: "menu_chat" }],
-          ...(isAdmin ? [[{ text: "⚙️ مدیریت گروه‌ها", callback_data: "admin_manage" }]] : [])
+          ...(isAdmin ? [
+            [{ text: "⚙️ مدیریت گروه‌ها", callback_data: "admin_manage" }],
+            [{ text: "🚫 مدیریت بلک‌لیست", callback_data: "blacklist_manage" }]
+          ] : [])
         ]
       };
     }
@@ -206,6 +312,146 @@ export default async function handler(req, res) {
         ]
       };
     }
+    // ==========================================
+    // 🚫 مدیریت بلک‌لیست
+    // ==========================================
+    else if (data === "blacklist_manage") {
+      if (!isAdmin) {
+        await tgApi('answerCallbackQuery', { 
+          callback_query_id: callbackQuery.id, 
+          text: "⛔️ شما دسترسی ادمین ندارید!", 
+          show_alert: true 
+        });
+        return res.status(200).send('OK');
+      }
+
+      const blacklist = await getAllBlacklist();
+      
+      if (blacklist.length === 0) {
+        newText = "🚫 *مدیریت بلک‌لیست*\n\n❌ *لیست خالی است.*\n\n📝 *روش‌های افزودن:*\n\n*۱. فوروارد پیام:* پیامی از کاربر/کانال/گروه فوروارد کنید\n\n*۲. آیدی عددی:* عدد بفرستید\n`123456789` (کاربر)\n`-1001234567890` (گروه/کانال)\n\n*۳. یوزرنیم:* با @ بفرستید\n`@username`";
+        newMarkup = {
+          inline_keyboard: [[{ text: "🔙 بازگشت به منو", callback_data: "main_menu" }]]
+        };
+      } else {
+        // تفکیک بر اساس نوع
+        const users = blacklist.filter(item => item.type === 'user');
+        const channels = blacklist.filter(item => item.type === 'channel');
+        const groups = blacklist.filter(item => item.type === 'group' || item.type === 'supergroup');
+        
+        newText = `🚫 *مدیریت بلک‌لیست*\n\n`;
+        newText += `👤 *کاربران:* ${users.length}\n`;
+        newText += `📢 *کانال‌ها:* ${channels.length}\n`;
+        newText += `👥 *گروه‌ها:* ${groups.length}\n`;
+        newText += `📊 *مجموع:* ${blacklist.length}\n\n`;
+        newText += `_روی هر آیتم کلیک کنید:_`;
+        
+        const blacklistButtons = blacklist.map(item => {
+          let icon = '🚫';
+          if (item.type === 'user') icon = '👤';
+          else if (item.type === 'channel') icon = '📢';
+          else if (item.type === 'group' || item.type === 'supergroup') icon = '👥';
+          
+          return [{
+            text: `${icon} ${item.name || item.username || item.id}`,
+            callback_data: `bl_view_${item.id}`
+          }];
+        });
+        
+        newMarkup = {
+          inline_keyboard: [
+            ...blacklistButtons,
+            [{ text: "🔙 بازگشت به منو", callback_data: "main_menu" }]
+          ]
+        };
+      }
+    }
+    else if (data.startsWith("bl_view_")) {
+      if (!isAdmin) {
+        await tgApi('answerCallbackQuery', { 
+          callback_query_id: callbackQuery.id, 
+          text: "⛔️ شما دسترسی ادمین ندارید!", 
+          show_alert: true 
+        });
+        return res.status(200).send('OK');
+      }
+
+      const itemId = data.replace("bl_view_", "");
+      const blacklist = await getAllBlacklist();
+      const item = blacklist.find(b => b.id.toString() === itemId);
+
+      if (!item) {
+        newText = "❌ *آیتم مورد نظر یافت نشد!*";
+        newMarkup = {
+          inline_keyboard: [[{ text: "🔙 بازگشت به لیست", callback_data: "blacklist_manage" }]]
+        };
+      } else {
+        const addDate = new Date(item.addedAt).toLocaleString('fa-IR', { timeZone: 'Asia/Tehran' });
+        let typeIcon = '🚫';
+        let typeName = 'نامشخص';
+        
+        if (item.type === 'user') {
+          typeIcon = '👤';
+          typeName = 'کاربر';
+        } else if (item.type === 'channel') {
+          typeIcon = '📢';
+          typeName = 'کانال';
+        } else if (item.type === 'group' || item.type === 'supergroup') {
+          typeIcon = '👥';
+          typeName = 'گروه';
+        }
+        
+        newText = `${typeIcon} *جزئیات بلک‌لیست*\n\n`;
+        newText += `📝 *نوع:* ${typeName}\n`;
+        newText += `📌 *نام:* ${item.name || 'نامشخص'}\n`;
+        newText += `🆔 *شناسه:* \`${item.id}\`\n`;
+        newText += `👤 *یوزرنیم:* ${item.username ? '@' + item.username : '❌ ندارد'}\n`;
+        newText += `📅 *تاریخ افزودن:* ${addDate}\n\n`;
+        
+        if (item.type === 'user') {
+          newText += `⚠️ *هر پیام فوروارد شده از این کاربر حذف می‌شود.*`;
+        } else {
+          newText += `⚠️ *هر پیام فوروارد شده از این ${typeName} حذف می‌شود.*`;
+        }
+        
+        newMarkup = {
+          inline_keyboard: [
+            [{ text: "🗑 حذف از بلک‌لیست", callback_data: `bl_remove_${itemId}` }],
+            [{ text: "🔙 بازگشت به لیست", callback_data: "blacklist_manage" }]
+          ]
+        };
+      }
+    }
+    else if (data.startsWith("bl_remove_")) {
+      if (!isAdmin) {
+        await tgApi('answerCallbackQuery', { 
+          callback_query_id: callbackQuery.id, 
+          text: "⛔️ شما دسترسی ادمین ندارید!", 
+          show_alert: true 
+        });
+        return res.status(200).send('OK');
+      }
+
+      const itemId = data.replace("bl_remove_", "");
+      const success = await removeFromBlacklist(itemId);
+      
+      if (success) {
+        newText = "✅ *عملیات موفق*\n\n*آیتم از بلک‌لیست حذف شد.*";
+        await tgApi('answerCallbackQuery', { 
+          callback_query_id: callbackQuery.id, 
+          text: "✅ از بلک‌لیست حذف شد", 
+          show_alert: false 
+        });
+      } else {
+        newText = "❌ *خطا در حذف از بلک‌لیست*";
+      }
+      
+      newMarkup = {
+        inline_keyboard: [[{ text: "🔙 بازگشت به لیست", callback_data: "blacklist_manage" }]]
+      };
+    }
+    // ==========================================
+    // ⚙️ مدیریت گروه‌ها
+    // ==========================================
     else if (data === "admin_manage") {
       if (!isAdmin) {
         await tgApi('answerCallbackQuery', { 
@@ -224,7 +470,7 @@ export default async function handler(req, res) {
           inline_keyboard: [[{ text: "🔙 بازگشت به منو", callback_data: "main_menu" }]]
         };
       } else {
-        newText = `📋 *مدیریت گروه‌ها*\n\n✅ *تعداد گروه‌های ثبت شده:* ${groups.length}\n\n_روی هر گروه کلیک کنید تا گزینه‌های مدیریت را ببینید:_`;
+        newText = `📋 *مدیریت گروه‌ها*\n\n✅ *تعداد گروه‌های ثبت شده:* ${groups.length}\n\n_روی هر گروه کلیک کنید:_`;
         
         const groupButtons = groups.map(g => [{
           text: `📍 ${g.title}`,
@@ -264,8 +510,7 @@ export default async function handler(req, res) {
         newText += `📌 *نام گروه:* ${group.title}\n`;
         newText += `🆔 *شناسه:* \`${group.id}\`\n`;
         newText += `👤 *یوزرنیم:* ${group.username ? '@' + group.username : '❌ ندارد'}\n`;
-        newText += `📅 *تاریخ عضویت:* ${joinDate}\n\n`;
-        newText += `⚠️ *با کلیک روی دکمه زیر، ربات از این گروه خارج می‌شود.*`;
+        newText += `📅 *تاریخ عضویت:* ${joinDate}`;
         
         newMarkup = {
           inline_keyboard: [
@@ -359,15 +604,239 @@ export default async function handler(req, res) {
   const text = message.text || "";
   const isGroup = message.chat.type !== 'private';
   const userId = message.from ? message.from.id : null;
+  const isAdmin = ADMIN_IDS.includes(userId);
 
-  console.log('Message from User ID:', userId);
-
+  // ذخیره اطلاعات گروه جدید
   if (isGroup && message.chat.title) {
     await saveGroupToKV(chatId, message.chat.title, message.chat.username);
   }
 
+  // حذف پیام‌های ورود و خروج
   if (message.new_chat_members || message.left_chat_member) {
     await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
+    return res.status(200).send('OK');
+  }
+
+  // ==========================================
+  // 🚫 بررسی فوروارد از بلک‌لیست
+  // ==========================================
+  if (isGroup) {
+    let shouldDelete = false;
+    let blacklistedSource = null;
+
+    // بررسی فوروارد از کانال/گروه
+    if (message.forward_from_chat) {
+      const forwardFromId = message.forward_from_chat.id;
+      const isBlacklisted = await isInBlacklist(forwardFromId);
+      
+      if (isBlacklisted) {
+        shouldDelete = true;
+        blacklistedSource = message.forward_from_chat.title || message.forward_from_chat.username || 'منبع بلک‌لیست شده';
+      }
+    }
+    
+    // بررسی فوروارد از کاربر
+    if (message.forward_from) {
+      const forwardFromId = message.forward_from.id;
+      const isBlacklisted = await isInBlacklist(forwardFromId);
+      
+      if (isBlacklisted) {
+        shouldDelete = true;
+        const firstName = message.forward_from.first_name || '';
+        const lastName = message.forward_from.last_name || '';
+        blacklistedSource = `${firstName} ${lastName}`.trim() || message.forward_from.username || 'کاربر بلک‌لیست شده';
+      }
+    }
+
+    if (shouldDelete) {
+      await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
+      
+      const warnRes = await tgApi('sendMessage', { 
+        chat_id: chatId, 
+        text: `🚫 *پیام حذف شد*\n\nارسال محتوا از *${blacklistedSource}* ممنوع است.`,
+        parse_mode: "Markdown"
+      });
+      
+      const warnData = await warnRes.json();
+      if (warnData.ok) {
+        await sleep(5000);
+        await tgApi('deleteMessage', { chat_id: chatId, message_id: warnData.result.message_id });
+      }
+      
+      return res.status(200).send('OK');
+    }
+  }
+
+  // ==========================================
+  // 🔧 دستورات ادمین در پی‌وی
+  // ==========================================
+  
+  // افزودن به بلک‌لیست از طریق فوروارد از کانال/گروه
+  if (!isGroup && isAdmin && message.forward_from_chat) {
+    const forwardFromId = message.forward_from_chat.id;
+    const forwardFromTitle = message.forward_from_chat.title || message.forward_from_chat.username || 'نامشخص';
+    const forwardFromUsername = message.forward_from_chat.username || null;
+    const forwardFromType = message.forward_from_chat.type; // channel, group, supergroup
+    
+    const alreadyBlacklisted = await isInBlacklist(forwardFromId);
+    
+    if (alreadyBlacklisted) {
+      await tgApi('sendMessage', {
+        chat_id: chatId,
+        text: `⚠️ *این منبع قبلاً در بلک‌لیست وجود دارد!*\n\n📌 *عنوان:* ${forwardFromTitle}\n🆔 *شناسه:* \`${forwardFromId}\``,
+        parse_mode: "Markdown"
+      });
+    } else {
+      const success = await addToBlacklist(forwardFromId, forwardFromTitle, forwardFromType, forwardFromUsername);
+      
+      if (success) {
+        let typeIcon = '🚫';
+        if (forwardFromType === 'channel') typeIcon = '📢';
+        else if (forwardFromType === 'group' || forwardFromType === 'supergroup') typeIcon = '👥';
+        
+        await tgApi('sendMessage', {
+          chat_id: chatId,
+          text: `✅ *به بلک‌لیست اضافه شد!*\n\n${typeIcon} *نوع:* ${forwardFromType === 'channel' ? 'کانال' : 'گروه'}\n📌 *عنوان:* ${forwardFromTitle}\n🆔 *شناسه:* \`${forwardFromId}\`\n👤 *یوزرنیم:* ${forwardFromUsername ? '@' + forwardFromUsername : '❌'}\n\n_از این پس تمام پیام‌های فوروارد شده از این منبع حذف خواهند شد._`,
+          parse_mode: "Markdown"
+        });
+      } else {
+        await tgApi('sendMessage', {
+          chat_id: chatId,
+          text: "❌ *خطا در افزودن به بلک‌لیست!*",
+          parse_mode: "Markdown"
+        });
+      }
+    }
+    return res.status(200).send('OK');
+  }
+
+  // افزودن به بلک‌لیست از طریق فوروارد از کاربر
+  if (!isGroup && isAdmin && message.forward_from) {
+    const forwardFromId = message.forward_from.id;
+    const firstName = message.forward_from.first_name || '';
+    const lastName = message.forward_from.last_name || '';
+    const forwardFromName = `${firstName} ${lastName}`.trim() || 'کاربر';
+    const forwardFromUsername = message.forward_from.username || null;
+    
+    const alreadyBlacklisted = await isInBlacklist(forwardFromId);
+    
+    if (alreadyBlacklisted) {
+      await tgApi('sendMessage', {
+        chat_id: chatId,
+        text: `⚠️ *این کاربر قبلاً در بلک‌لیست وجود دارد!*\n\n👤 *نام:* ${forwardFromName}\n🆔 *شناسه:* \`${forwardFromId}\``,
+        parse_mode: "Markdown"
+      });
+    } else {
+      const success = await addToBlacklist(forwardFromId, forwardFromName, 'user', forwardFromUsername);
+      
+      if (success) {
+        await tgApi('sendMessage', {
+          chat_id: chatId,
+          text: `✅ *به بلک‌لیست اضافه شد!*\n\n👤 *نوع:* کاربر\n📌 *نام:* ${forwardFromName}\n🆔 *شناسه:* \`${forwardFromId}\`\n👤 *یوزرنیم:* ${forwardFromUsername ? '@' + forwardFromUsername : '❌'}\n\n_از این پس تمام پیام‌های فوروارد شده از این کاربر حذف خواهند شد._`,
+          parse_mode: "Markdown"
+        });
+      } else {
+        await tgApi('sendMessage', {
+          chat_id: chatId,
+          text: "❌ *خطا در افزودن به بلک‌لیست!*",
+          parse_mode: "Markdown"
+        });
+      }
+    }
+    return res.status(200).send('OK');
+  }
+
+  // افزودن به بلک‌لیست از طریق یوزرنیم (@username)
+  if (!isGroup && isAdmin && text && text.startsWith('@') && text.length > 1) {
+    const username = text.trim();
+    
+    // دریافت اطلاعات از تلگرام
+    const userInfo = await getUserInfo(username);
+    
+    if (!userInfo) {
+      await tgApi('sendMessage', {
+        chat_id: chatId,
+        text: `❌ *کاربر/کانال/گروه با یوزرنیم ${username} یافت نشد!*\n\n_ممکن است یوزرنیم اشتباه باشد یا حساب پرایوت باشد._`,
+        parse_mode: "Markdown"
+      });
+      return res.status(200).send('OK');
+    }
+    
+    const alreadyBlacklisted = await isInBlacklist(userInfo.id);
+    
+    if (alreadyBlacklisted) {
+      await tgApi('sendMessage', {
+        chat_id: chatId,
+        text: `⚠️ *این ${userInfo.type === 'user' ? 'کاربر' : (userInfo.type === 'channel' ? 'کانال' : 'گروه')} قبلاً در بلک‌لیست وجود دارد!*\n\n📌 *نام:* ${userInfo.name}\n🆔 *شناسه:* \`${userInfo.id}\``,
+        parse_mode: "Markdown"
+      });
+    } else {
+      const success = await addToBlacklist(userInfo.id, userInfo.name, userInfo.type, userInfo.username);
+      
+      if (success) {
+        let typeIcon = '🚫';
+        let typeName = 'نامشخص';
+        if (userInfo.type === 'user') {
+          typeIcon = '👤';
+          typeName = 'کاربر';
+        } else if (userInfo.type === 'channel') {
+          typeIcon = '📢';
+          typeName = 'کانال';
+        } else if (userInfo.type === 'group' || userInfo.type === 'supergroup') {
+          typeIcon = '👥';
+          typeName = 'گروه';
+        }
+        
+        await tgApi('sendMessage', {
+          chat_id: chatId,
+          text: `✅ *به بلک‌لیست اضافه شد!*\n\n${typeIcon} *نوع:* ${typeName}\n📌 *نام:* ${userInfo.name}\n🆔 *شناسه:* \`${userInfo.id}\`\n👤 *یوزرنیم:* @${userInfo.username}\n\n_از این پس تمام پیام‌های فوروارد شده از این ${typeName} حذف خواهند شد._`,
+          parse_mode: "Markdown"
+        });
+      } else {
+        await tgApi('sendMessage', {
+          chat_id: chatId,
+          text: "❌ *خطا در افزودن به بلک‌لیست!*",
+          parse_mode: "Markdown"
+        });
+      }
+    }
+    return res.status(200).send('OK');
+  }
+
+  // افزودن به بلک‌لیست از طریق آیدی عددی
+  if (!isGroup && isAdmin && text && /^-?\d+$/.test(text.trim())) {
+    const targetId = parseInt(text.trim());
+    
+    const alreadyBlacklisted = await isInBlacklist(targetId);
+    
+    if (alreadyBlacklisted) {
+      await tgApi('sendMessage', {
+        chat_id: chatId,
+        text: `⚠️ *این آیدی قبلاً در بلک‌لیست وجود دارد!*\n\n🆔 *شناسه:* \`${targetId}\``,
+        parse_mode: "Markdown"
+      });
+    } else {
+      // تشخیص نوع بر اساس آیدی (منفی = گروه/کانال، مثبت = کاربر)
+      const targetType = targetId < 0 ? 'group' : 'user';
+      const success = await addToBlacklist(targetId, `ID: ${targetId}`, targetType, null);
+      
+      if (success) {
+        const typeIcon = targetType === 'user' ? '👤' : '👥';
+        const typeName = targetType === 'user' ? 'کاربر' : 'گروه/کانال';
+        
+        await tgApi('sendMessage', {
+          chat_id: chatId,
+          text: `✅ *به بلک‌لیست اضافه شد!*\n\n${typeIcon} *نوع (تخمینی):* ${typeName}\n🆔 *شناسه:* \`${targetId}\`\n\n_از این پس تمام پیام‌های فوروارد شده از این منبع حذف خواهند شد._`,
+          parse_mode: "Markdown"
+        });
+      } else {
+        await tgApi('sendMessage', {
+          chat_id: chatId,
+          text: "❌ *خطا در افزودن به بلک‌لیست!*",
+          parse_mode: "Markdown"
+        });
+      }
+    }
     return res.status(200).send('OK');
   }
 
@@ -391,16 +860,28 @@ export default async function handler(req, res) {
   if (text === "/start") {
     if (isGroup) await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
     
-    const isAdmin = ADMIN_IDS.includes(userId);
-    console.log('Is Admin on /start:', isAdmin);
-    
     const keyboard = isAdmin 
-      ? [[{ text: "📋 منوی اصلی" }], [{ text: "⚙️ مدیریت گروه‌ها" }]]
+      ? [
+          [{ text: "📋 منوی اصلی" }], 
+          [{ text: "⚙️ مدیریت گروه‌ها" }, { text: "🚫 بلک‌لیست" }]
+        ]
       : [[{ text: "📋 منوی اصلی" }]];
+    
+    let welcomeText = `👋 *خوش آمدید!*\n\n`;
+    if (isAdmin) {
+      welcomeText += `🔑 *شما ادمین هستید.*\n\n`;
+      welcomeText += `📝 *راهنمای افزودن به بلک‌لیست:*\n\n`;
+      welcomeText += `*۱. فوروارد:* پیام کاربر/کانال/گروه رو فوروارد کنید\n`;
+      welcomeText += `*۲. یوزرنیم:* \`@username\` بفرستید\n`;
+      welcomeText += `*۳. آیدی عددی:*\n`;
+      welcomeText += `   • کاربر: \`123456789\`\n`;
+      welcomeText += `   • گروه/کانال: \`-1001234567890\`\n\n`;
+    }
+    welcomeText += `دکمه‌های دسترسی سریع فعال شد. 👇`;
     
     await tgApi('sendMessage', { 
       chat_id: chatId, 
-      text: `👋 *خوش آمدید!*\n\n${isAdmin ? '🔑 شما ادمین هستید.\n\n' : ''}دکمه‌های دسترسی سریع برای شما فعال شد. 👇`, 
+      text: welcomeText, 
       parse_mode: "Markdown",
       reply_markup: { keyboard, resize_keyboard: true } 
     });
@@ -410,8 +891,10 @@ export default async function handler(req, res) {
   if (text === "/menu" || text === "منو" || text === "📋 منوی اصلی") {
     if (isGroup) await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
     
-    const isAdmin = ADMIN_IDS.includes(userId);
-    const adminButton = isAdmin ? [[{ text: "⚙️ مدیریت گروه‌ها", callback_data: "admin_manage" }]] : [];
+    const adminButtons = isAdmin ? [
+      [{ text: "⚙️ مدیریت گروه‌ها", callback_data: "admin_manage" }],
+      [{ text: "🚫 مدیریت بلک‌لیست", callback_data: "blacklist_manage" }]
+    ] : [];
     
     await tgApi('sendMessage', {
       chat_id: chatId, 
@@ -424,37 +907,53 @@ export default async function handler(req, res) {
           [{ text: "📞 گروه های ارتباط", callback_data: "menu_contact" }],
           [{ text: "📜 قوانین", callback_data: "menu_rules" }],
           [{ text: "💬 گفت‌وگو با ربات", callback_data: "menu_chat" }],
-          ...adminButton
+          ...adminButtons
         ]
       }
     });
     return res.status(200).send('OK');
   }
 
-  if ((text === "/admin" || text === "⚙️ مدیریت گروه‌ها") && ADMIN_IDS.includes(userId)) {
+  if ((text === "/blacklist" || text === "🚫 بلک‌لیست") && isAdmin) {
     if (isGroup) await tgApi('deleteMessage', { chat_id: chatId, message_id: messageId });
     
-    const groups = await getAllGroupsFromKV();
+    const blacklist = await getAllBlacklist();
     
-    let adminText = "";
-    let adminMarkup = {};
+    let blacklistText = "";
+    let blacklistMarkup = {};
     
-    if (groups.length === 0) {
-      adminText = "📋 *مدیریت گروه‌ها*\n\n❌ *هیچ گروهی ثبت نشده است.*\n\n_ربات را به گروه‌های مورد نظر اضافه کنید تا اینجا لیست شوند._";
-      adminMarkup = {
+    if (blacklist.length === 0) {
+      blacklistText = "🚫 *مدیریت بلک‌لیست*\n\n❌ *لیست خالی است.*\n\n📝 *روش‌های افزودن:*\n\n*۱. فوروارد پیام*\n*۲. یوزرنیم:* `@username`\n*۳. آیدی عددی:* `123456789` یا `-1001234567890`";
+      blacklistMarkup = {
         inline_keyboard: [[{ text: "🔙 بازگشت به منو", callback_data: "main_menu" }]]
       };
     } else {
-      adminText = `📋 *مدیریت گروه‌ها*\n\n✅ *تعداد گروه‌های ثبت شده:* ${groups.length}\n\n_روی هر گروه کلیک کنید:_`;
+      const users = blacklist.filter(item => item.type === 'user');
+      const channels = blacklist.filter(item => item.type === 'channel');
+      const groups = blacklist.filter(item => item.type === 'group' || item.type === 'supergroup');
       
-      const groupButtons = groups.map(g => [{
-        text: `📍 ${g.title}`,
-        callback_data: `view_${g.id}`
-      }]);
+      blacklistText = `🚫 *مدیریت بلک‌لیست*\n\n`;
+      blacklistText += `👤 *کاربران:* ${users.length}\n`;
+      blacklistText += `📢 *کانال‌ها:* ${channels.length}\n`;
+      blacklistText += `👥 *گروه‌ها:* ${groups.length}\n`;
+      blacklistText += `📊 *مجموع:* ${blacklist.length}\n\n`;
+      blacklistText += `_روی هر آیتم کلیک کنید:_`;
       
-      adminMarkup = {
+      const blacklistButtons = blacklist.map(item => {
+        let icon = '🚫';
+        if (item.type === 'user') icon = '👤';
+        else if (item.type === 'channel') icon = '📢';
+        else if (item.type === 'group' || item.type === 'supergroup') icon = '👥';
+        
+        return [{
+          text: `${icon} ${item.name || item.username || item.id}`,
+          callback_data: `bl_view_${item.id}`
+        }];
+      });
+      
+      blacklistMarkup = {
         inline_keyboard: [
-          ...groupButtons,
+          ...blacklistButtons,
           [{ text: "🔙 بازگشت به منو", callback_data: "main_menu" }]
         ]
       };
@@ -462,13 +961,14 @@ export default async function handler(req, res) {
     
     await tgApi('sendMessage', {
       chat_id: chatId,
-      text: adminText,
+      text: blacklistText,
       parse_mode: "Markdown",
-      reply_markup: adminMarkup
+      reply_markup: blacklistMarkup
     });
     return res.status(200).send('OK');
   }
 
+  // سیستم امنیتی
   if (!isExempt && isGroup) {
     let isSpam = false;
     let warningMessage = "";
