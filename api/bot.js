@@ -799,6 +799,245 @@ export default async function handler(req, res) {
           
           const warn = await tgApi('sendMessage', { 
             chat_id: chatId, 
+        await tgApi('sendMessage', {
+          chat_id: chatId,
+          text: `❌ ${target} یافت نشد!`
+        });
+        return res.status(200).send('OK');
+      }
+      id = info.id;
+      name = info.name;
+      type = info.type;
+    }
+
+    const alreadyWhitelisted = await isInWhitelist(id);
+    
+    if (alreadyWhitelisted) {
+      await tgApi('sendMessage', {
+        chat_id: chatId,
+        text: `⚠️ قبلاً در وایت‌لیست است!`,
+        parse_mode: "Markdown"
+      });
+    } else {
+      const success = await addToWhitelist(id, name, type);
+      
+      if (success) {
+        await tgApi('sendMessage', {
+          chat_id: chatId,
+          text: `✅ به وایت‌لیست اضافه شد!\n\n📌 ${name}\n🆔 \`${id}\``,
+          parse_mode: "Markdown"
+        });
+      }
+    }
+    return res.status(200).send('OK');
+  }
+
+  // /start
+  if (text === '/start' || text.startsWith('/start@')) {
+    if (isGroup) {
+      await tgApi('deleteMessage', { chat_id: chatId, message_id: msg.message_id });
+    }
+
+    const keyboard = isAdmin 
+      ? [[{ text: "📋 منو" }], [{ text: "⚙️ مدیریت" }]]
+      : [[{ text: "📋 منو" }]];
+
+    let welcomeText = `👋 *خوش آمدید!*\n\n`;
+    if (isAdmin) {
+      welcomeText += `🔑 شما ادمین هستید.\n\n`;
+      welcomeText += `📝 *راهنمای سریع:*\n`;
+      welcomeText += `• فوروارد کنید → بلک‌لیست\n`;
+      welcomeText += `• \`/wl آیدی\` → وایت‌لیست\n\n`;
+    }
+    welcomeText += `از دکمه زیر استفاده کنید:`;
+
+      // ==========================================
+  // Message Handler
+  // ==========================================
+
+  const msg = req.body.message;
+  if (!msg) return res.status(200).send('OK');
+
+  const chatId = msg.chat.id;
+  const text = msg.text || "";
+  const userId = msg.from?.id;
+  const isAdmin = ADMIN_IDS.includes(userId);
+  const isGroup = msg.chat.type === 'group' || msg.chat.type === 'supergroup';
+
+  // آمار
+  await incrementStat('messages');
+
+  // ذخیره گروه
+  if (isGroup && msg.chat.title) {
+    await saveGroup(chatId, msg.chat.title, msg.chat.username);
+  }
+
+  // حذف join/leave
+  if (msg.new_chat_members || msg.left_chat_member) {
+    await tgApi('deleteMessage', { chat_id: chatId, message_id: msg.message_id });
+    return res.status(200).send('OK');
+  }
+
+  // ==========================================
+  // بررسی معافیت (FIXED: ادمین‌ها خودکار معاف)
+  // ==========================================
+  const senderChatId = msg.sender_chat ? msg.sender_chat.id : null;
+  
+  const isUserWhitelisted = userId ? await isInWhitelist(userId) : false;
+  const isSenderWhitelisted = senderChatId ? await isInWhitelist(senderChatId) : false;
+  const isChatWhitelisted = chatId ? await isInWhitelist(chatId) : false;
+  
+  // ادمین‌ها، تلگرام رسمی، و وایت‌لیست‌ها معاف هستند
+  const isExempt = 
+    isAdmin ||                    // ⭐ اول از همه چک می‌کنیم ادمین باشه
+    isUserWhitelisted || 
+    isSenderWhitelisted ||
+    isChatWhitelisted || 
+    userId === 777000 ||          // تلگرام رسمی
+    msg.is_automatic_forward;     // فوروارد خودکار کانال
+
+  console.log('🔒 Exemption check:', {
+    userId,
+    isAdmin,
+    isUserWhitelisted,
+    isExempt
+  });
+
+  // ==========================================
+  // فیلترهای امنیتی (فقط برای افراد غیر معاف)
+  // ==========================================
+
+  if (isGroup && !isExempt) {
+    // ==========================================
+    // بررسی بلک‌لیست فوروارد
+    // ==========================================
+    if (msg.forward_from_chat) {
+      const forwardId = msg.forward_from_chat.id;
+      const isBlocked = await isInBlacklist(forwardId);
+      
+      if (isBlocked) {
+        console.log('🚫 Blocked forward from chat:', forwardId);
+        await tgApi('deleteMessage', { chat_id: chatId, message_id: msg.message_id });
+        await incrementStat('blocked_forwards');
+        await incrementStat('deleted');
+        
+        const warn = await tgApi('sendMessage', { 
+          chat_id: chatId, 
+          text: `🚫 پیام حذف شد - فوروارد از منبع بلک‌لیست شده`
+        });
+        
+        if (warn && warn.result) {
+          await sleep(5000);
+          await tgApi('deleteMessage', { chat_id: chatId, message_id: warn.result.message_id });
+        }
+        
+        return res.status(200).send('OK');
+      }
+    }
+
+    if (msg.forward_from) {
+      const forwardId = msg.forward_from.id;
+      const isBlocked = await isInBlacklist(forwardId);
+      
+      if (isBlocked) {
+        console.log('🚫 Blocked forward from user:', forwardId);
+        await tgApi('deleteMessage', { chat_id: chatId, message_id: msg.message_id });
+        await incrementStat('blocked_forwards');
+        await incrementStat('deleted');
+        
+        const warn = await tgApi('sendMessage', { 
+          chat_id: chatId, 
+          text: `🚫 پیام حذف شد - فوروارد از کاربر بلک‌لیست شده`
+        });
+        
+        if (warn && warn.result) {
+          await sleep(5000);
+          await tgApi('deleteMessage', { chat_id: chatId, message_id: warn.result.message_id });
+        }
+        
+        return res.status(200).send('OK');
+      }
+    }
+
+    // ==========================================
+    // فیلتر کلمات رکیک (FIXED: چک دقیق‌تر)
+    // ==========================================
+    const badWords = [
+      "جاکش", "جنده", "کونی", "شاشزاده", 
+      "کون", "کص", "کسکش", "کوسکش", "کوصکش", "کصکش", 
+      "کیر", "کوس", "گوه"
+    ];
+    
+    // تبدیل متن به حروف کوچک و حذف نقطه‌گذاری
+    const normalizedText = text.toLowerCase()
+      .replace(/[۰-۹]/g, '')  // حذف اعداد فارسی
+      .replace(/[0-9]/g, '')  // حذف اعداد انگلیسی
+      .replace(/[.,،؛!؟?\s]/g, ' '); // جایگزینی نقطه‌گذاری با فاصله
+    
+    // تبدیل به آرایه کلمات
+    const words = normalizedText.split(/\s+/).filter(w => w.length > 0);
+    
+    // چک کردن اینکه آیا کلمه دقیق وجود داره
+    const hasBadWord = badWords.some(badWord => 
+      words.includes(badWord.toLowerCase())
+    );
+
+    console.log('📝 Bad word check:', {
+      originalText: text.substring(0, 50),
+      normalizedText: normalizedText.substring(0, 50),
+      words: words.slice(0, 10),
+      hasBadWord
+    });
+
+    // ==========================================
+    // فیلتر لینک
+    // ==========================================
+    const linkRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.(com|org|ir|net|me|info|biz|co|xyz))|(@[a-zA-Z0-9_]{5,})/i;
+    const hasLink = linkRegex.test(text);
+
+    console.log('🔗 Link check:', {
+      text: text.substring(0, 50),
+      hasLink
+    });
+
+    if (hasBadWord || hasLink) {
+      console.log('🗑 Deleting message:', hasBadWord ? 'bad word' : 'link');
+      await tgApi('deleteMessage', { chat_id: chatId, message_id: msg.message_id });
+      await incrementStat('deleted');
+      
+      const warnText = hasBadWord 
+        ? "⚠️ استفاده از کلمات نامناسب ممنوع است!" 
+        : "⚠️ ارسال لینک و تبلیغات ممنوع است!";
+      
+      const warn = await tgApi('sendMessage', { chat_id: chatId, text: warnText });
+      
+      if (warn && warn.result) {
+        await sleep(7000);
+        await tgApi('deleteMessage', { chat_id: chatId, message_id: warn.result.message_id });
+      }
+      
+      return res.status(200).send('OK');
+    }
+
+    // ==========================================
+    // ضد اسپم (پیام تکراری)
+    // ==========================================
+    if (KV_URL && KV_TOKEN && text.length > 10) {
+      const spamKey = `spam_${text.substring(0, 50).replace(/\s/g, '')}`;
+      
+      try {
+        const spamCheck = await fetch(`${KV_URL}/get/${spamKey}`, {
+          headers: { Authorization: `Bearer ${KV_TOKEN}` }
+        });
+        const spamData = await spamCheck.json();
+        
+        if (spamData.result !== null) {
+          console.log('🔁 Spam detected');
+          await tgApi('deleteMessage', { chat_id: chatId, message_id: msg.message_id });
+          await incrementStat('deleted');
+          
+          const warn = await tgApi('sendMessage', { 
+            chat_id: chatId, 
             text: "⚠️ ارسال پیام تکراری (اسپم) ممنوع است!" 
           });
           
@@ -813,7 +1052,9 @@ export default async function handler(req, res) {
             headers: { Authorization: `Bearer ${KV_TOKEN}` }
           });
         }
-      } catch (e) {}
+      } catch (e) {
+        console.error('Spam check error:', e);
+      }
     }
   }
 
@@ -927,7 +1168,7 @@ export default async function handler(req, res) {
 
     let welcomeText = `👋 *خوش آمدید!*\n\n`;
     if (isAdmin) {
-      welcomeText += `🔑 شما ادمین هستید.\n\n`;
+      welcomeText += `🔑 شما ادمین هستید و از همه فیلترها معاف می‌باشید.\n\n`;
       welcomeText += `📝 *راهنمای سریع:*\n`;
       welcomeText += `• فوروارد کنید → بلک‌لیست\n`;
       welcomeText += `• \`/wl آیدی\` → وایت‌لیست\n\n`;
@@ -987,4 +1228,4 @@ export default async function handler(req, res) {
   }
 
   res.status(200).send('OK');
-}
+                                 }
