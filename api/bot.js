@@ -332,7 +332,7 @@ export default async function handler(req, res) {
       };
     }
     else if (data === "rules") {
-      text = "📜 *قوانین:*\n\n۱. استفاده از کلمات رکیک و توهین ممنوع است.\n۲. ارسال هرگونه لینک و تبلیغات ممنوع است.\n۳. ارسال پیام‌های تکراری (اسپم) ممنوع است.\n۴. لطفاً نظم گروه را رعایت کنید.";
+      text = "📜 *قوانین:*\n\n۱. استفاده از کلمات رکیک و توهین ممنوع است.\n۲. ارسال هرگونه لینک و تبلیغات ممنوع است.\n۳. ارسال پیام‌های تکراری (اسپم) ممنوع است.\n۴. فوروارد از کانال‌های بلک‌لیست شده ممنوع است.\n۵. لطفاً نظم گروه را رعایت کنید.";
       keyboard = {
         inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "main_menu" }]]
       };
@@ -488,7 +488,7 @@ export default async function handler(req, res) {
       const blacklist = await getAllBlacklist();
 
       if (blacklist.length === 0) {
-        text = "🚫 *بلک‌لیست*\n\n❌ لیست خالی است.\n\n*راهنما:*\nپیام فوروارد شده را برام بفرست تا به بلک‌لیست اضافه شود.";
+        text = "🚫 *بلک‌لیست*\n\n❌ لیست خالی است.\n\n*راهنما:*\nپیام فوروارد شده را برام بفرست تا به بلک‌لیست اضافه شود.\n\n⚠️ *توجه:* هر کاربر/کانال/گروهی که در بلک‌لیست باشد، حتی ادمین‌ها هم نمی‌توانند از آن فوروارد کنند.";
         keyboard = {
           inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "admin" }]]
         };
@@ -497,7 +497,7 @@ export default async function handler(req, res) {
         const channels = blacklist.filter(i => i.type === 'channel');
         const groups = blacklist.filter(i => i.type === 'group' || i.type === 'supergroup');
 
-        text = `🚫 *بلک‌لیست*\n\n👤 کاربران: ${users.length}\n📢 کانال‌ها: ${channels.length}\n👥 گروه‌ها: ${groups.length}\n📊 مجموع: ${blacklist.length}`;
+        text = `🚫 *بلک‌لیست*\n\n👤 کاربران: ${users.length}\n📢 کانال‌ها: ${channels.length}\n👥 گروه‌ها: ${groups.length}\n📊 مجموع: ${blacklist.length}\n\n⚠️ *فوروارد از این منابع برای همه ممنوع است*`;
         
         const buttons = blacklist.slice(0, 10).map(item => [{
           text: `${item.type === 'user' ? '👤' : item.type === 'channel' ? '📢' : '👥'} ${item.name}`,
@@ -532,7 +532,7 @@ export default async function handler(req, res) {
           inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "manage_blacklist" }]]
         };
       } else {
-        text = `🚫 *جزئیات*\n\n📌 نام: ${item.name}\n🆔 شناسه: \`${item.id}\`\n📝 نوع: ${item.type}`;
+        text = `🚫 *جزئیات بلک‌لیست*\n\n📌 نام: ${item.name}\n🆔 شناسه: \`${item.id}\`\n📝 نوع: ${item.type}\n\n⚠️ *فوروارد از این منبع برای همه ممنوع است (حتی ادمین‌ها)*`;
         
         keyboard = {
           inline_keyboard: [
@@ -573,7 +573,7 @@ export default async function handler(req, res) {
       const whitelist = await getAllWhitelist();
 
       if (whitelist.length === 0) {
-        text = "✅ *وایت‌لیست*\n\n❌ لیست خالی است.\n\n*راهنما:*\nدستور `/wl آیدی_عددی` یا `/wl @username` را بفرستید.";
+        text = "✅ *وایت‌لیست*\n\n❌ لیست خالی است.\n\n*راهنما:*\nدستور `/wl آیدی_عددی` یا `/wl @username` را بفرستید.\n\n💡 *توجه:* وایت‌لیست فقط از فیلتر لینک و کلمات رکیک معاف می‌کند، نه بلک‌لیست!";
         keyboard = {
           inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "admin" }]]
         };
@@ -617,7 +617,7 @@ export default async function handler(req, res) {
           inline_keyboard: [[{ text: "🔙 بازگشت", callback_data: "manage_whitelist" }]]
         };
       } else {
-        text = `✅ *جزئیات*\n\n📌 نام: ${item.name}\n🆔 شناسه: \`${item.id}\`\n📝 نوع: ${item.type}`;
+        text = `✅ *جزئیات وایت‌لیست*\n\n📌 نام: ${item.name}\n🆔 شناسه: \`${item.id}\`\n📝 نوع: ${item.type}`;
         
         keyboard = {
           inline_keyboard: [
@@ -687,7 +687,81 @@ export default async function handler(req, res) {
     return res.status(200).send('OK');
   }
 
-  // بررسی معافیت
+  // ==========================================
+  // 🚫 بررسی بلک‌لیست فوروارد (اولویت اول - برای همه)
+  // ==========================================
+  
+  if (isGroup) {
+    // بررسی فوروارد از کانال/گروه بلک‌لیست شده
+    if (msg.forward_from_chat) {
+      const forwardId = msg.forward_from_chat.id;
+      const isBlocked = await isInBlacklist(forwardId);
+      
+      if (isBlocked) {
+        console.log('🚫 BLACKLIST ENFORCED - Forward from chat:', forwardId, 'Admin:', isAdmin);
+        await tgApi('deleteMessage', { chat_id: chatId, message_id: msg.message_id });
+        await incrementStat('blocked_forwards');
+        await incrementStat('deleted');
+        
+        const sourceName = msg.forward_from_chat.title || msg.forward_from_chat.username || 'منبع بلک‌لیست شده';
+        const warnText = isAdmin 
+          ? `🚫 *اخطار به ادمین*\n\nکانال/گروه "${sourceName}" در بلک‌لیست است.\n\n⚠️ *حتی ادمین‌ها نمی‌توانند از منابع بلک‌لیست شده فوروارد کنند!*`
+          : `🚫 پیام حذف شد\n\nفوروارد از "${sourceName}" ممنوع است.`;
+        
+        const warn = await tgApi('sendMessage', { 
+          chat_id: chatId, 
+          text: warnText,
+          parse_mode: "Markdown"
+        });
+        
+        if (warn && warn.result) {
+          await sleep(isAdmin ? 10000 : 5000);
+          await tgApi('deleteMessage', { chat_id: chatId, message_id: warn.result.message_id });
+        }
+        
+        return res.status(200).send('OK');
+      }
+    }
+
+    // بررسی فوروارد از کاربر بلک‌لیست شده
+    if (msg.forward_from) {
+      const forwardId = msg.forward_from.id;
+      const isBlocked = await isInBlacklist(forwardId);
+      
+      if (isBlocked) {
+        console.log('🚫 BLACKLIST ENFORCED - Forward from user:', forwardId, 'Admin:', isAdmin);
+        await tgApi('deleteMessage', { chat_id: chatId, message_id: msg.message_id });
+        await incrementStat('blocked_forwards');
+        await incrementStat('deleted');
+        
+        const firstName = msg.forward_from.first_name || '';
+        const lastName = msg.forward_from.last_name || '';
+        const sourceName = `${firstName} ${lastName}`.trim() || 'کاربر بلک‌لیست شده';
+        
+        const warnText = isAdmin 
+          ? `🚫 *اخطار به ادمین*\n\nکاربر "${sourceName}" در بلک‌لیست است.\n\n⚠️ *حتی ادمین‌ها نمی‌توانند از کاربران بلک‌لیست شده فوروارد کنند!*`
+          : `🚫 پیام حذف شد\n\nفوروارد از "${sourceName}" ممنوع است.`;
+        
+        const warn = await tgApi('sendMessage', { 
+          chat_id: chatId, 
+          text: warnText,
+          parse_mode: "Markdown"
+        });
+        
+        if (warn && warn.result) {
+          await sleep(isAdmin ? 10000 : 5000);
+          await tgApi('deleteMessage', { chat_id: chatId, message_id: warn.result.message_id });
+        }
+        
+        return res.status(200).send('OK');
+      }
+    }
+  }
+
+  // ==========================================
+  // بررسی معافیت (فقط برای فیلترهای دیگر)
+  // ==========================================
+  
   const senderChatId = msg.sender_chat ? msg.sender_chat.id : null;
   
   const isUserWhitelisted = userId ? await isInWhitelist(userId) : false;
@@ -702,58 +776,14 @@ export default async function handler(req, res) {
     userId === 777000 ||
     msg.is_automatic_forward;
 
-  // فیلترهای امنیتی (فقط برای افراد غیر معاف در گروه)
+  // ==========================================
+  // فیلترهای امنیتی دیگر (برای افراد غیر معاف)
+  // ==========================================
+
   if (isGroup && !isExempt) {
-    // بررسی بلک‌لیست فوروارد
-    if (msg.forward_from_chat) {
-      const forwardId = msg.forward_from_chat.id;
-      const isBlocked = await isInBlacklist(forwardId);
-      
-      if (isBlocked) {
-        await tgApi('deleteMessage', { chat_id: chatId, message_id: msg.message_id });
-        await incrementStat('blocked_forwards');
-        await incrementStat('deleted');
-        
-        const warn = await tgApi('sendMessage', { 
-          chat_id: chatId, 
-          text: `🚫 پیام حذف شد - فوروارد از منبع بلک‌لیست شده`
-        });
-        
-        if (warn && warn.result) {
-          await sleep(5000);
-          await tgApi('deleteMessage', { chat_id: chatId, message_id: warn.result.message_id });
-        }
-        
-        return res.status(200).send('OK');
-      }
-    }
-
-    if (msg.forward_from) {
-      const forwardId = msg.forward_from.id;
-      const isBlocked = await isInBlacklist(forwardId);
-      
-      if (isBlocked) {
-        await tgApi('deleteMessage', { chat_id: chatId, message_id: msg.message_id });
-        await incrementStat('blocked_forwards');
-        await incrementStat('deleted');
-        
-        const warn = await tgApi('sendMessage', { 
-          chat_id: chatId, 
-          text: `🚫 پیام حذف شد - فوروارد از کاربر بلک‌لیست شده`
-        });
-        
-        if (warn && warn.result) {
-          await sleep(5000);
-          await tgApi('deleteMessage', { chat_id: chatId, message_id: warn.result.message_id });
-        }
-        
-        return res.status(200).send('OK');
-      }
-    }
-
     // فیلتر کلمات رکیک
     const badWords = [
-      "کونی", "جاکش", "جنده", "شاشزاده", 
+      "احمق", "بیشعور", "کلاهبرداری", "شاشزاده", 
       "کون", "کص", "کسکش", "کوسکش", "کوصکش", "کصکش", 
       "کیر", "کوس", "گوه"
     ];
@@ -818,7 +848,11 @@ export default async function handler(req, res) {
     }
   }
 
-  // دستورات ادمین - افزودن به بلک‌لیست (فوروارد)
+  // ==========================================
+  // دستورات ادمین
+  // ==========================================
+
+  // افزودن به بلک‌لیست (فوروارد)
   if (!isGroup && isAdmin && (msg.forward_from_chat || msg.forward_from)) {
     let id, name, type;
     
@@ -848,7 +882,7 @@ export default async function handler(req, res) {
       if (success) {
         await tgApi('sendMessage', {
           chat_id: chatId,
-          text: `✅ به بلک‌لیست اضافه شد!\n\n📌 ${name}\n🆔 \`${id}\`\n📝 ${type}`,
+          text: `✅ به بلک‌لیست اضافه شد!\n\n📌 ${name}\n🆔 \`${id}\`\n📝 ${type}\n\n🚫 *از این پس هیچ‌کس (حتی ادمین‌ها) نمی‌تواند از این منبع فوروارد کند.*`,
           parse_mode: "Markdown"
         });
       }
@@ -904,7 +938,7 @@ export default async function handler(req, res) {
       if (success) {
         await tgApi('sendMessage', {
           chat_id: chatId,
-          text: `✅ به وایت‌لیست اضافه شد!\n\n📌 ${name}\n🆔 \`${id}\``,
+          text: `✅ به وایت‌لیست اضافه شد!\n\n📌 ${name}\n🆔 \`${id}\`\n\n💡 *معاف از: لینک، کلمات رکیک، اسپم*\n⚠️ *غیرمعاف از: بلک‌لیست*`,
           parse_mode: "Markdown"
         });
       }
@@ -924,10 +958,11 @@ export default async function handler(req, res) {
 
     let welcomeText = `👋 *خوش آمدید!*\n\n`;
     if (isAdmin) {
-      welcomeText += `🔑 شما ادمین هستید و از همه فیلترها معاف می‌باشید.\n\n`;
+      welcomeText += `🔑 شما ادمین هستید.\n\n`;
       welcomeText += `📝 *راهنمای سریع:*\n`;
       welcomeText += `• فوروارد کنید → بلک‌لیست\n`;
       welcomeText += `• \`/wl آیدی\` → وایت‌لیست\n\n`;
+      welcomeText += `⚠️ *توجه:* بلک‌لیست برای همه اعمال می‌شود (حتی ادمین‌ها)\n\n`;
     }
     welcomeText += `از دکمه زیر استفاده کنید:`;
 
