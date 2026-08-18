@@ -485,7 +485,10 @@ function buildListView(kind, items, page) {
   text += kind === 'bl'
     ? '\u26a0\ufe0f \u0641\u0648\u0631\u0648\u0627\u0631\u062f \u0627\u0632 \u0627\u06cc\u0646 \u0645\u0646\u0627\u0628\u0639 \u0628\u0631\u0627\u06cc <b>\u0647\u0645\u0647</b> \u0645\u0645\u0646\u0648\u0639 \u0627\u0633\u062a (\u062d\u062a\u06cc \u0627\u062f\u0645\u06cc\u0646\u200c\u0647\u0627).\n\n\ud83d\uddd1 = \u062d\u0630\u0641 \u0633\u0631\u06cc\u0639 \u0627\u0632 \u0644\u06cc\u0633\u062a'
     : kind === 'wl'
-    ? '\ud83d\udca1 \u0645\u0639\u0627\u0641 \u0627\u0632 \u0641\u06cc\u0644\u062a\u0631 \u0644\u06cc\u0646\u06a9/\u06a9\u0644\u0645\u0627\u062a/\u0627\u0633\u067e\u0645 \u2014 \u0648\u0644\u06cc \u0646\u0647 \u0627\u0632 \u0628\u0644\u06a9\u200c\u0644\u06cc\u0633\u062a.\n\n\ud83d\uddd1 = \u062d\u0630\u0641 \u0633\u0631\u06cc\u0639 \u0627\u0632 \u0644\u06cc\u0633\u062a'
+    ? '\ud83d\udca1 <b>\u0645\u0639\u0627\u0641 \u0627\u0632:</b> \u0641\u06cc\u0644\u062a\u0631 \u0644\u06cc\u0646\u06a9\u060c \u06a9\u0644\u0645\u0627\u062a \u0631\u06a9\u06cc\u06a9\u060c \u0627\u0633\u067e\u0645\n' +
+      '\ud83d\udce2 \u0627\u06af\u0631 \u06a9\u0627\u0646\u0627\u0644/\u06af\u0631\u0648\u0647\u06cc \u0627\u06cc\u0646\u062c\u0627 \u0628\u0627\u0634\u062f\u060c <b>\u0647\u0645\u0647\u200c\u06cc \u06a9\u0627\u0631\u0628\u0631\u0627\u0646</b> \u0645\u06cc\u200c\u062a\u0648\u0627\u0646\u0646\u062f\n' +
+      '\u0627\u0632 \u0622\u0646 \u0641\u0648\u0631\u0648\u0627\u0631\u062f \u06a9\u0646\u0646\u062f \u0648 \u067e\u06cc\u0627\u0645 \u062d\u0630\u0641 \u0646\u0645\u06cc\u200c\u0634\u0648\u062f.\n' +
+      '\u26a0\ufe0f \u0645\u0639\u0627\u0641 \u0646\u06cc\u0633\u062a \u0627\u0632: \u0628\u0644\u06a9\u200c\u0644\u06cc\u0633\u062a\n\n\ud83d\uddd1 = \u062d\u0630\u0641 \u0633\u0631\u06cc\u0639 \u0627\u0632 \u0644\u06cc\u0633\u062a'
     : '\ud83d\uddd1 = \u062e\u0631\u0648\u062c \u0631\u0628\u0627\u062a \u0627\u0632 \u06af\u0631\u0648\u0647';
 
   return {
@@ -712,7 +715,14 @@ async function handleCallback(cb) {
           ns === 'bl'
             ? '\ud83d\udeab <b>\u0628\u0644\u06a9\u200c\u0644\u06cc\u0633\u062a</b>\n\n\u274c \u0644\u06cc\u0633\u062a \u062e\u0627\u0644\u06cc \u0627\u0633\u062a.\n\n<b>\u0627\u0641\u0632\u0648\u062f\u0646:</b>\n\u2022 \u06cc\u06a9 \u067e\u06cc\u0627\u0645 \u0627\u0632 \u0622\u0646 \u06a9\u0627\u0631\u0628\u0631/\u06a9\u0627\u0646\u0627\u0644 \u0631\u0627 \u0628\u0631\u0627\u06cc\u0645 \u0641\u0648\u0631\u0648\u0627\u0631\u062f \u06a9\u0646\u06cc\u062f\n\u2022 \u06cc\u0627 <code>/bl \u0622\u06cc\u062f\u06cc</code> \u2014 <code>/bl @username</code>\n\n<b>\u062d\u0630\u0641:</b> <code>/unbl \u0622\u06cc\u062f\u06cc</code>'
             : ns === 'wl'
-            ? '\u2705 <b>\u0648\u0627\u06cc\u062a\u200c\u0644\u06cc\u0633\u062a</b>\n\n\u274c \u0644\u06cc\u0633\u062a \u062e\u0627\u0644\u06cc \u0627\u0633\u062a.\n\n<b>\u0627\u0641\u0632\u0648\u062f\u0646:</b> <code>/wl \u0622\u06cc\u062f\u06cc</code> \u06cc\u0627 <code>/wl @username</code>\n<b>\u062d\u0630\u0641:</b> <code>/unwl \u0622\u06cc\u062f\u06cc</code>'
+            ? '\u2705 <b>\u0648\u0627\u06cc\u062a\u200c\u0644\u06cc\u0633\u062a</b>\n\n\u274c \u0644\u06cc\u0633\u062a \u062e\u0627\u0644\u06cc \u0627\u0633\u062a.\n\n' +
+              '<b>\u0627\u0641\u0632\u0648\u062f\u0646:</b>\n' +
+              '\u2022 <code>/wl @channelname</code>\n' +
+              '\u2022 <code>/wl 123456789</code>\n' +
+              '\u2022 \u0631\u06cc\u067e\u0644\u0627\u06cc \u0631\u0648\u06cc \u06cc\u06a9 \u067e\u06cc\u0627\u0645 \u0641\u0648\u0631\u0648\u0627\u0631\u062f \u0634\u062f\u0647 + <code>/wl</code>\n\n' +
+              '<b>\u062d\u0630\u0641:</b> <code>/unwl \u0622\u06cc\u062f\u06cc</code>\n\n' +
+              '\ud83d\udca1 \u0627\u06af\u0631 \u06a9\u0627\u0646\u0627\u0644\u06cc \u0631\u0627 \u0627\u06cc\u0646\u062c\u0627 \u0627\u0636\u0627\u0641\u0647 \u06a9\u0646\u06cc\u062f\u060c <b>\u0647\u0645\u0647\u200c\u06cc \u06a9\u0627\u0631\u0628\u0631\u0627\u0646</b>\n' +
+              '\u0645\u06cc\u200c\u062a\u0648\u0627\u0646\u0646\u062f \u0627\u0632 \u0622\u0646 \u0641\u0648\u0631\u0648\u0627\u0631\u062f \u06a9\u0646\u0646\u062f \u0628\u062f\u0648\u0646 \u0627\u06cc\u0646\u06a9\u0647 \u067e\u06cc\u0627\u0645 \u062d\u0630\u0641 \u0634\u0648\u062f.'
             : '\ud83d\udccb <b>\u06af\u0631\u0648\u0647\u200c\u0647\u0627</b>\n\n\u274c \u0647\u06cc\u0686 \u06af\u0631\u0648\u0647\u06cc \u062b\u0628\u062a \u0646\u0634\u062f\u0647.';
         keyboard = { inline_keyboard: [backBtn('adm:home')] };
       } else {
@@ -904,15 +914,27 @@ async function handleMessage(msg, { edited = false } = {}) {
   // \u06f2) \u0645\u0639\u0627\u0641\u06cc\u062a\u200c\u0647\u0627 (\u0641\u0642\u0637 \u0628\u0631\u0627\u06cc filters\u06cc \u0639\u0645\u0648\u0645\u06cc\u060c \u0646\u0647 \u0628\u0644\u06a9\u200c\u0644\u06cc\u0633\u062a)
   // ---------------------------------------------------------------
   const senderChatId = msg.sender_chat?.id ?? null;
-  const [wlUser, wlSender, wlChat] = await Promise.all([
+  // also check the forward source: if a channel/group is whitelisted,
+  // forwarding from it must be allowed for ALL users, not just admins.
+  const fwdSrc = getForwardSource(msg);
+  const fwdSrcId = fwdSrc?.id ?? null;
+
+  const [wlUser, wlSender, wlChat, wlForward] = await Promise.all([
     userId ? entryHas('wl', userId) : Promise.resolve(false),
     senderChatId ? entryHas('wl', senderChatId) : Promise.resolve(false),
     entryHas('wl', chatId),
+    fwdSrcId ? entryHas('wl', fwdSrcId) : Promise.resolve(false),
   ]);
 
   const isCommandToBot = /^\/[a-z0-9_]+(@[a-zA-Z0-9_]+)?(\s|$)/i.test(cmd);
   const isExempt =
-    isAdmin || wlUser || wlSender || wlChat || userId === 777000 || Boolean(msg.is_automatic_forward);
+    isAdmin ||
+    wlUser ||
+    wlSender ||
+    wlChat ||
+    wlForward ||
+    userId === 777000 ||
+    Boolean(msg.is_automatic_forward);
 
   // ---------------------------------------------------------------
   // \u06f3) filters\u06cc \u0639\u0645\u0648\u0645\u06cc
@@ -1011,7 +1033,13 @@ async function handleMessage(msg, { edited = false } = {}) {
         await send(
           chatId,
           `\u2705 \u0628\u0647 ${KIND[kind].label} \u0627\u0636\u0627\u0641\u0647 \u0634\u062f.\n\n\ud83d\udccc ${esc(target.name)}\n\ud83c\udd94 <code>${target.id}</code>\n\ud83d\udcdd ${typeLabel(target.type)}` +
-            (kind === 'wl' ? '\n\n\ud83d\udca1 \u0645\u0639\u0627\u0641 \u0627\u0632: \u0644\u06cc\u0646\u06a9\u060c \u06a9\u0644\u0645\u0627\u062a \u0631\u06a9\u06cc\u06a9\u060c \u0627\u0633\u067e\u0645\n\u26a0\ufe0f \u063a\u06cc\u0631\u0645\u0639\u0627\u0641 \u0627\u0632: \u0628\u0644\u06a9\u200c\u0644\u06cc\u0633\u062a' : ''),
+            (kind === 'wl'
+              ? '\n\n\ud83d\udca1 \u0645\u0639\u0627\u0641 \u0627\u0632: \u0644\u06cc\u0646\u06a9\u060c \u06a9\u0644\u0645\u0627\u062a \u0631\u06a9\u06cc\u06a9\u060c \u0627\u0633\u067e\u0645' +
+                (target.type === 'channel' || target.type === 'group' || target.type === 'supergroup'
+                  ? '\n\ud83d\udce2 <b>\u0647\u0645\u0647\u200c\u06cc \u06a9\u0627\u0631\u0628\u0631\u0627\u0646</b> \u0645\u06cc\u200c\u062a\u0648\u0627\u0646\u0646\u062f \u0627\u0632 \u0627\u06cc\u0646 \u0645\u0646\u0628\u0639 \u0641\u0648\u0631\u0648\u0627\u0631\u062f \u06a9\u0646\u0646\u062f.'
+                  : '') +
+                '\n\u26a0\ufe0f \u063a\u06cc\u0631\u0645\u0639\u0627\u0641 \u0627\u0632: \u0628\u0644\u06a9\u200c\u0644\u06cc\u0633\u062a'
+              : ''),
           { reply_markup: { inline_keyboard: [[{ text: `\ud83d\uddd1 \u062d\u0630\u0641 \u0627\u0632 ${KIND[kind].label}`, callback_data: `${kind}:del:${target.id}:0` }]] } }
         );
       }
