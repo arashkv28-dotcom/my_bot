@@ -4,7 +4,7 @@
 //
 //  Required environment variables:
 //    BOT_TOKEN            bot token from BotFather
-//    ADMIN_IDS            numeric admin ids, comma separated (e.g. 111,222)
+//    ADMIN_IDS            numeric admin ids, comma separated
 //    KV_REST_API_URL      Upstash Redis REST url
 //    KV_REST_API_TOKEN    Upstash REST token
 //    WEBHOOK_SECRET       (optional, recommended) same value passed to
@@ -22,6 +22,8 @@ const ADMIN_IDS = (process.env.ADMIN_IDS || '')
   .filter((id) => Number.isFinite(id));
 
 const PAGE_SIZE = 8;          // items per page in lists
+const WORDS_PAGE = 12;        // bad words per page
+const WORDS_CACHE_TTL = 30000;// ms - in-memory cache for bad words
 const WARN_TTL_MS = 5000;     // how long warning messages stay
 const DEDUP_TTL = 300;        // sec - dedupe repeated updates
 const SPAM_TTL = 3600;        // sec - duplicate/spam detection window
@@ -78,7 +80,7 @@ async function warn(chatId, text, ttl = WARN_TTL_MS) {
 }
 
 // ==========================================================================
-//  Database layer (Upstash REST via POST + pipeline, not URL path)
+//  Database layer (Upstash REST via POST + pipeline)
 // ==========================================================================
 
 const kvReady = () => Boolean(KV_URL && KV_TOKEN);
@@ -169,7 +171,7 @@ async function entryGet(kind, id) {
   }
 }
 
-/** all items via one SMEMBERS + one MGET (instead of N requests) */
+/** all items via one SMEMBERS + one MGET */
 async function entryList(kind) {
   const K = KIND[kind];
   const ids = await kv(['SMEMBERS', K.index]);
@@ -199,7 +201,7 @@ async function statGet(key) {
   return parseInt(v, 10) || 0;
 }
 
-/** migrate legacy keys (blacklist_* / whitelist_* / group_*) */
+/** migrate legacy keys */
 async function migrateLegacy() {
   const map = [
     ['blacklist_*', 'bl'],
@@ -261,7 +263,7 @@ function getForwardSource(msg) {
   return null;
 }
 
-/** text + caption + hidden urls inside entities (text_link) */
+/** text + caption + hidden urls in entities */
 function extractText(msg) {
   const parts = [];
   if (msg.text) parts.push(msg.text);
@@ -274,13 +276,91 @@ function extractText(msg) {
 
 // --- filters ---------------------------------------------------------------
 
-const BAD_WORDS = [
+/** default seed list, used only when DB is empty */
+const DEFAULT_BAD_WORDS = [
   '\u0627\u062d\u0645\u0642', '\u0628\u06cc\u0634\u0639\u0648\u0631', '\u0628\u06cc \u0634\u0639\u0648\u0631', '\u06a9\u0644\u0627\u0647\u0628\u0631\u062f\u0627\u0631', '\u0634\u0627\u0634\u0632\u0627\u062f\u0647',
   '\u06a9\u0648\u0646', '\u06a9\u0635', '\u06a9\u0633 \u06a9\u0634', '\u06a9\u0633\u06a9\u0634', '\u06a9\u0648\u0633\u06a9\u0634', '\u06a9\u0648\u0635\u06a9\u0634', '\u06a9\u0635\u06a9\u0634',
   '\u06a9\u06cc\u0631', '\u06a9\u0648\u0633', '\u06af\u0648\u0647',
 ];
 
-/** normalize Arabic/Persian letters, strip ZWNJ, diacritics, tatweel */
+const WORDS_KEY = 'badwords';
+const WORDS_SEEDED = 'badwords:seeded';
+
+/** in-memory cache to avoid a KV call per message */
+let _wordsCache = null;
+let _wordsCacheAt = 0;
+
+/** read bad words from DB (cached, auto-seeded) */
+async function getBadWords(force = false) {
+  const now = Date.now();
+  if (!force && _wordsCache && now - _wordsCacheAt < WORDS_CACHE_TTL) return _wordsCache;
+
+  if (!kvReady()) {
+    _wordsCache = DEFAULT_BAD_WORDS.slice();
+    _wordsCacheAt = now;
+    return _wordsCache;
+  }
+
+  let list = await kv(['SMEMBERS', WORDS_KEY]);
+
+  // first run: write defaults. The seeded flag means if an admin
+  // clears everything, defaults do not come back.
+  if (!Array.isArray(list) || list.length === 0) {
+    const seeded = await kv(['GET', WORDS_SEEDED]);
+    if (!seeded) {
+      await kvPipe([
+        ['SADD', WORDS_KEY, ...DEFAULT_BAD_WORDS],
+        ['SET', WORDS_SEEDED, '1'],
+      ]);
+      list = DEFAULT_BAD_WORDS.slice();
+    } else {
+      list = [];
+    }
+  }
+
+  _wordsCache = Array.isArray(list) ? list : [];
+  _wordsCacheAt = now;
+  return _wordsCache;
+}
+
+const invalidateWords = () => { _wordsCache = null; _wordsCacheAt = 0; };
+
+async function addBadWords(raw) {
+  // support multiple words separated by comma or newline
+  const parts = String(raw)
+    .split(/[,\u060C\n]+/)
+    .map((w) => w.trim())
+    .filter((w) => w.length >= 2 && w.length <= 40);
+
+  if (parts.length === 0) return { added: [], dup: [], bad: true };
+
+  const current = await getBadWords(true);
+  const currentNorm = new Set(current.map((w) => normalizeFa(w)));
+
+  const added = [];
+  const dup = [];
+  for (const w of parts) {
+    const n = normalizeFa(w);
+    if (!n) continue;
+    if (currentNorm.has(n)) { dup.push(w); continue; }
+    currentNorm.add(n);
+    added.push(w);
+  }
+
+  if (added.length) {
+    await kv(['SADD', WORDS_KEY, ...added]);
+    invalidateWords();
+  }
+  return { added, dup, bad: false };
+}
+
+async function removeBadWord(word) {
+  const r = await kv(['SREM', WORDS_KEY, word]);
+  invalidateWords();
+  return Number(r) > 0;
+}
+
+/** normalize Arabic/Persian letters, strip ZWNJ/diacritics */
 function normalizeFa(s = '') {
   return String(s)
     .toLowerCase()
@@ -296,14 +376,23 @@ function normalizeFa(s = '') {
     .trim();
 }
 
-function hasBadWord(text) {
+/** check text against a list, returns the matched word */
+function matchBadWord(text, list) {
   const t = normalizeFa(text);
-  if (!t) return false;
+  if (!t) return null;
   const words = t.split(' ');
-  return BAD_WORDS.some((bw) => {
+  for (const bw of list) {
     const b = normalizeFa(bw);
-    return b.includes(' ') ? t.includes(b) : words.includes(b);
-  });
+    if (!b) continue;
+    // multi-word phrase -> substring, single word -> exact match
+    if (b.includes(' ') ? t.includes(b) : words.includes(b)) return bw;
+  }
+  return null;
+}
+
+/** sync variant for tests (default list) */
+function hasBadWord(text, list) {
+  return matchBadWord(text, list || DEFAULT_BAD_WORDS) !== null;
 }
 
 const LINK_RE =
@@ -348,6 +437,7 @@ const ADMIN_MENU = {
       [{ text: '\ud83d\udccb \u06af\u0631\u0648\u0647\u200c\u0647\u0627', callback_data: 'grp:list:0' }],
       [{ text: '\ud83d\udeab \u0628\u0644\u06a9\u200c\u0644\u06cc\u0633\u062a', callback_data: 'bl:list:0' }],
       [{ text: '\u2705 \u0648\u0627\u06cc\u062a\u200c\u0644\u06cc\u0633\u062a', callback_data: 'wl:list:0' }],
+      [{ text: '\ud83e\udd2c \u06a9\u0644\u0645\u0627\u062a \u0645\u0645\u0646\u0648\u0639\u0647', callback_data: 'bw:list:0' }],
       backBtn('menu:main'),
     ],
   },
@@ -406,6 +496,63 @@ function buildListView(kind, items, page) {
   };
 }
 
+/** bad-words management view */
+function buildWordsView(words, page) {
+  const sorted = words.slice().sort((a, b) => a.localeCompare(b, 'fa'));
+  const pages = Math.max(1, Math.ceil(sorted.length / WORDS_PAGE));
+  const p = Math.min(Math.max(0, page), pages - 1);
+  const slice = sorted.slice(p * WORDS_PAGE, p * WORDS_PAGE + WORDS_PAGE);
+
+  // two columns per row to keep the list compact.
+  // \u26a0\ufe0f callback_data is capped at 64 bytes and URL-encoded Persian is ~6x,
+  //    so we send the index in the sorted list instead of the word.
+  const rows = [];
+  for (let i = 0; i < slice.length; i += 2) {
+    const row = [];
+    for (let j = 0; j < 2 && i + j < slice.length; j++) {
+      const idx = p * WORDS_PAGE + i + j;
+      const w = slice[i + j];
+      const label = w.length > 18 ? w.slice(0, 17) + '\u2026' : w;
+      row.push({ text: `\ud83d\uddd1 ${label}`, callback_data: `bw:del:${idx}:${p}` });
+    }
+    rows.push(row);
+  }
+
+  const nav = [];
+  if (p > 0) nav.push({ text: '\u25c0\ufe0f \u0642\u0628\u0644\u06cc', callback_data: `bw:list:${p - 1}` });
+  if (pages > 1) nav.push({ text: `${p + 1}/${pages}`, callback_data: 'nop' });
+  if (p < pages - 1) nav.push({ text: '\u0628\u0639\u062f\u06cc \u25b6\ufe0f', callback_data: `bw:list:${p + 1}` });
+
+  let text = `\ud83e\udd2c <b>\u06a9\u0644\u0645\u0627\u062a \u0645\u0645\u0646\u0648\u0639\u0647</b>\n\n\ud83d\udcca \u0645\u062c\u0645\u0648\u0639: ${sorted.length} \u06a9\u0644\u0645\u0647\n\n`;
+  if (sorted.length === 0) {
+    text += '\u274c \u0644\u06cc\u0633\u062a \u062e\u0627\u0644\u06cc \u0627\u0633\u062a \u2014 \u0647\u06cc\u0686 \u06a9\u0644\u0645\u0647\u200c\u0627\u06cc \u0641\u06cc\u0644\u062a\u0631 \u0646\u0645\u06cc\u200c\u0634\u0648\u062f.\n\n';
+  } else {
+    text += `\u0635\u0641\u062d\u0647 ${p + 1} \u0627\u0632 ${pages} \u2014 \u0631\u0648\u06cc \u0647\u0631 \u06a9\u0644\u0645\u0647 \u0628\u0632\u0646\u06cc\u062f \u062a\u0627 \u062d\u0630\u0641 \u0634\u0648\u062f.\n\n`;
+  }
+  text +=
+    '<b>\u0627\u0641\u0632\u0648\u062f\u0646:</b>\n' +
+    '<code>/addword \u06a9\u0644\u0645\u0647</code>\n' +
+    '\u0686\u0646\u062f \u06a9\u0644\u0645\u0647 \u0628\u0627 \u06a9\u0627\u0645\u0627:\n' +
+    '<code>/addword \u06a9\u0644\u0645\u0647\u06f1\u060c \u06a9\u0644\u0645\u0647\u06f2\u060c \u06a9\u0644\u0645\u0647\u06f3</code>\n\n' +
+    '<b>\u062d\u0630\u0641:</b> <code>/delword \u06a9\u0644\u0645\u0647</code>\n' +
+    '<b>\u062a\u0633\u062a:</b> <code>/testword \u06cc\u06a9 \u062c\u0645\u0644\u0647</code>';
+
+  return {
+    text,
+    keyboard: {
+      inline_keyboard: [
+        ...rows,
+        ...(nav.length ? [nav] : []),
+        [
+          { text: '\u2795 \u0631\u0627\u0647\u0646\u0645\u0627\u06cc \u0627\u0641\u0632\u0648\u062f\u0646', callback_data: 'bw:help' },
+          { text: '\u267b\ufe0f \u0628\u0627\u0632\u06af\u0631\u062f\u0627\u0646\u06cc \u067e\u06cc\u0634\u200c\u0641\u0631\u0636', callback_data: 'bw:reset' },
+        ],
+        backBtn('adm:home'),
+      ],
+    },
+  };
+}
+
 // ==========================================================================
 //  Callback Query
 // ==========================================================================
@@ -423,7 +570,7 @@ async function handleCallback(cb) {
   //     delete button never fired. Routing now uses separated segments.
   const [ns, action, arg1, arg2] = data.split(':');
 
-  const adminOnly = ['adm', 'bl', 'wl', 'grp'].includes(ns);
+  const adminOnly = ['adm', 'bl', 'wl', 'grp', 'bw'].includes(ns);
   if (adminOnly && !isAdmin) {
     await ack('\u26d4\ufe0f \u062f\u0633\u062a\u0631\u0633\u06cc \u0646\u062f\u0627\u0631\u06cc\u062f!', true);
     return;
@@ -492,6 +639,69 @@ async function handleCallback(cb) {
         `\ud83d\udeab \u0628\u0644\u06a9\u200c\u0644\u06cc\u0633\u062a: ${bl.length}\n` +
         `\u2705 \u0648\u0627\u06cc\u062a\u200c\u0644\u06cc\u0633\u062a: ${wl.length}`;
       keyboard = { inline_keyboard: [backBtn('adm:home')] };
+    }
+  } else if (ns === 'bw') {
+    if (action === 'list') {
+      const words = await getBadWords(true);
+      ({ text, keyboard } = buildWordsView(words, parseInt(arg1, 10) || 0));
+    } else if (action === 'del') {
+      // arg1 = index into sorted list (not the word - 64-byte cap)
+      const all = await getBadWords(true);
+      const sorted = all.slice().sort((a, b) => a.localeCompare(b, 'fa'));
+      const idx = parseInt(arg1, 10);
+      const word = Number.isInteger(idx) ? sorted[idx] : undefined;
+
+      if (word === undefined) {
+        await ack('\u26a0\ufe0f \u0644\u06cc\u0633\u062a \u062a\u063a\u06cc\u06cc\u0631 \u06a9\u0631\u062f\u0647 \u2014 \u062f\u0648\u0628\u0627\u0631\u0647 \u062a\u0644\u0627\u0634 \u06a9\u0646\u06cc\u062f', true);
+        const v = buildWordsView(all, parseInt(arg2, 10) || 0);
+        await editView(chatId, msgId, v.text, v.keyboard);
+        return;
+      }
+      const ok = await removeBadWord(word);
+      await ack(ok ? `\u2705 \u00ab${word}\u00bb \u062d\u0630\u0641 \u0634\u062f` : '\u26a0\ufe0f \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f');
+      const fresh = await getBadWords(true);
+      const v = buildWordsView(fresh, parseInt(arg2, 10) || 0);
+      await editView(chatId, msgId, v.text, v.keyboard);
+      return;
+    } else if (action === 'help') {
+      text =
+        '\u2795 <b>\u0627\u0641\u0632\u0648\u062f\u0646 \u06a9\u0644\u0645\u0647 \u0645\u0645\u0646\u0648\u0639\u0647</b>\n\n' +
+        '\u06a9\u0627\u0641\u06cc \u0627\u0633\u062a \u062f\u0631 \u0647\u0645\u06cc\u0646 \u0686\u062a \u0628\u0646\u0648\u06cc\u0633\u06cc\u062f:\n\n' +
+        '<code>/addword \u0627\u062d\u0645\u0642</code>\n\n' +
+        '<b>\u0686\u0646\u062f \u06a9\u0644\u0645\u0647 \u0628\u0627 \u0647\u0645</b> (\u0628\u0627 \u06a9\u0627\u0645\u0627 \u06cc\u0627 \u062e\u0637 \u062c\u062f\u06cc\u062f):\n' +
+        '<code>/addword \u06a9\u0644\u0645\u0647\u06f1\u060c \u06a9\u0644\u0645\u0647\u06f2\u060c \u06a9\u0644\u0645\u0647\u06f3</code>\n\n' +
+        '<b>\u0639\u0628\u0627\u0631\u062a \u0686\u0646\u062f\u06a9\u0644\u0645\u0647\u200c\u0627\u06cc</b> \u0647\u0645 \u067e\u0634\u062a\u06cc\u0628\u0627\u0646\u06cc \u0645\u06cc\u200c\u0634\u0648\u062f:\n' +
+        '<code>/addword \u0628\u0631\u0648 \u06af\u0645 \u0634\u0648</code>\n' +
+        '\u21b3 \u0641\u0642\u0637 \u0648\u0642\u062a\u06cc \u06a9\u0644 \u0639\u0628\u0627\u0631\u062a \u067e\u0634\u062a\u200c\u0633\u0631\u0647\u0645 \u0628\u06cc\u0627\u06cc\u062f \u062d\u0630\u0641 \u0645\u06cc\u200c\u0634\u0648\u062f.\n\n' +
+        '<b>\u062a\u06a9\u200c\u06a9\u0644\u0645\u0647\u200c\u0647\u0627</b> \u0628\u0627 \u0645\u0637\u0627\u0628\u0642\u062a \u06a9\u0627\u0645\u0644 \u0686\u06a9 \u0645\u06cc\u200c\u0634\u0648\u0646\u062f\u060c \u067e\u0633\n' +
+        '\u00ab\u06a9\u0635\u00bb \u062f\u0627\u062e\u0644 \u00ab\u0645\u0634\u062e\u0635\u00bb \u0627\u0634\u062a\u0628\u0627\u0647\u06cc \u06af\u06cc\u0631 \u0646\u0645\u06cc\u200c\u0627\u0641\u062a\u062f.\n\n' +
+        '\ud83d\udd24 \u0646\u06cc\u0645\u200c\u0641\u0627\u0635\u0644\u0647\u060c \u0627\u0639\u0631\u0627\u0628\u060c \u0648 \u06cc/\u06a9 \u0639\u0631\u0628\u06cc \u062e\u0648\u062f\u06a9\u0627\u0631 \u06cc\u06a9\u0633\u0627\u0646\u200c\u0633\u0627\u0632\u06cc \u0645\u06cc\u200c\u0634\u0648\u0646\u062f.\n\n' +
+        '<b>\u062a\u0633\u062a:</b> <code>/testword \u0627\u06cc\u0646 \u06cc\u06a9 \u062c\u0645\u0644\u0647 \u0622\u0632\u0645\u0627\u06cc\u0634\u06cc \u0627\u0633\u062a</code>';
+      keyboard = { inline_keyboard: [backBtn('bw:list:0')] };
+    } else if (action === 'reset') {
+      text =
+        '\u267b\ufe0f <b>\u0628\u0627\u0632\u06af\u0631\u062f\u0627\u0646\u06cc \u0644\u06cc\u0633\u062a \u067e\u06cc\u0634\u200c\u0641\u0631\u0636</b>\n\n' +
+        `${DEFAULT_BAD_WORDS.length} \u06a9\u0644\u0645\u0647\u200c\u06cc \u067e\u06cc\u0634\u200c\u0641\u0631\u0636 \u0628\u0647 \u0644\u06cc\u0633\u062a \u0627\u0636\u0627\u0641\u0647 \u0645\u06cc\u200c\u0634\u0648\u0646\u062f.\n\n` +
+        '\u06a9\u0644\u0645\u0627\u062a \u0641\u0639\u0644\u06cc <b>\u062d\u0630\u0641 \u0646\u0645\u06cc\u200c\u0634\u0648\u0646\u062f</b> \u2014 \u0641\u0642\u0637 \u067e\u06cc\u0634\u200c\u0641\u0631\u0636\u200c\u0647\u0627\u06cc \u063a\u0627\u06cc\u0628 \u0627\u0636\u0627\u0641\u0647 \u0645\u06cc\u200c\u06af\u0631\u062f\u0646\u062f.';
+      keyboard = {
+        inline_keyboard: [
+          [
+            { text: '\u2705 \u0628\u0644\u0647\u060c \u0627\u0636\u0627\u0641\u0647 \u06a9\u0646', callback_data: 'bw:doreset:0:0' },
+            { text: '\u274c \u0627\u0646\u0635\u0631\u0627\u0641', callback_data: 'bw:list:0' },
+          ],
+        ],
+      };
+    } else if (action === 'doreset') {
+      await kvPipe([
+        ['SADD', WORDS_KEY, ...DEFAULT_BAD_WORDS],
+        ['SET', WORDS_SEEDED, '1'],
+      ]);
+      invalidateWords();
+      await ack('\u2705 \u067e\u06cc\u0634\u200c\u0641\u0631\u0636\u200c\u0647\u0627 \u0627\u0636\u0627\u0641\u0647 \u0634\u062f\u0646\u062f');
+      const words = await getBadWords(true);
+      const v = buildWordsView(words, 0);
+      await editView(chatId, msgId, v.text, v.keyboard);
+      return;
     }
   } else if (ns === 'bl' || ns === 'wl' || ns === 'grp') {
     const items = await entryList(ns);
@@ -589,7 +799,7 @@ async function editView(chatId, msgId, text, keyboard) {
     disable_web_page_preview: true,
     reply_markup: keyboard || { inline_keyboard: [] },
   });
-  // if the message cannot be edited (too old/deleted) send a fresh one
+  // if the message cannot be edited send a fresh one
   if (r && !r.ok && !/message is not modified/i.test(r.description || '')) {
     await send(chatId, text, { reply_markup: keyboard });
   }
@@ -618,7 +828,7 @@ async function resolveTarget(msg, arg) {
     return { id, name: `ID ${id}`, type: id < 0 ? 'group' : 'user' };
   }
 
-  // \u06f3) username - works for channels/groups or users the bot has seen
+  // \u06f3) username - works for channels/groups or seen users
   const uname = arg.startsWith('@') ? arg : '@' + arg;
   if (!/^@[a-zA-Z0-9_]{4,}$/.test(uname)) return null;
   const r = await tgApi('getChat', { chat_id: uname });
@@ -644,7 +854,7 @@ async function handleMessage(msg, { edited = false } = {}) {
 
   if (!edited) await statInc('messages');
 
-  // record group, throttled so we do not write to KV on every message
+  // record group, throttled to avoid a KV write per message
   if (isGroup && msg.chat.title) {
     const fresh = await kv(['SET', `grp:touch:${chatId}`, '1', 'NX', 'EX', GROUP_TOUCH_TTL]);
     if (fresh) {
@@ -708,7 +918,8 @@ async function handleMessage(msg, { edited = false } = {}) {
   // \u06f3) filters\u06cc \u0639\u0645\u0648\u0645\u06cc
   // ---------------------------------------------------------------
   if (isGroup && !isExempt && text) {
-    const bad = hasBadWord(text);
+    const words = await getBadWords();
+    const bad = matchBadWord(text, words) !== null;
     // bot commands must not trip the @mention filter
     const link = !isCommandToBot && hasLink(text, msg);
 
@@ -723,7 +934,7 @@ async function handleMessage(msg, { edited = false } = {}) {
       return;
     }
 
-    // anti-spam - key hashed per user+chat (no raw text in URL)
+    // anti-spam - key hashed per user+chat
     if (kvReady() && text.length > 10 && !edited) {
       const fp = hashText(`${chatId}:${userId}:${normalizeFa(text).slice(0, 120)}`);
       const fresh = await kv(['SET', `spam:${fp}`, '1', 'NX', 'EX', SPAM_TTL]);
@@ -808,6 +1019,79 @@ async function handleMessage(msg, { edited = false } = {}) {
     return;
   }
 
+  // --- bad words management ---
+  if (isAdmin && ['/addword', '/delword', '/listwords', '/testword'].includes(base)) {
+    if (isGroup) await del(chatId, msg.message_id);
+    const rest = cmd.slice(rawCmd.length).trim();
+
+    if (base === '/addword') {
+      if (!rest) {
+        await send(
+          chatId,
+          '\u274c \u06a9\u0644\u0645\u0647\u200c\u0627\u06cc \u0646\u0646\u0648\u0634\u062a\u06cc\u062f.\n\n<b>\u0645\u062b\u0627\u0644:</b>\n<code>/addword \u0627\u062d\u0645\u0642</code>\n<code>/addword \u06a9\u0644\u0645\u0647\u06f1\u060c \u06a9\u0644\u0645\u0647\u06f2</code>'
+        );
+        return;
+      }
+      const { added, dup, bad } = await addBadWords(rest);
+      if (bad) {
+        await send(chatId, '\u274c \u06a9\u0644\u0645\u0647 \u0645\u0639\u062a\u0628\u0631 \u0646\u0628\u0648\u062f (\u0628\u0627\u06cc\u062f \u0628\u06cc\u0646 \u06f2 \u062a\u0627 \u06f4\u06f0 \u062d\u0631\u0641 \u0628\u0627\u0634\u062f).');
+        return;
+      }
+      let t = '';
+      if (added.length) t += `\u2705 <b>${added.length} \u06a9\u0644\u0645\u0647 \u0627\u0636\u0627\u0641\u0647 \u0634\u062f:</b>\n${added.map((w) => '\u2022 ' + esc(w)).join('\n')}\n\n`;
+      if (dup.length) t += `\u26a0\ufe0f <b>\u0642\u0628\u0644\u0627\u064b \u0645\u0648\u062c\u0648\u062f \u0628\u0648\u062f:</b>\n${dup.map((w) => '\u2022 ' + esc(w)).join('\n')}\n\n`;
+      const total = (await getBadWords(true)).length;
+      t += `\ud83d\udcca \u0645\u062c\u0645\u0648\u0639: ${total} \u06a9\u0644\u0645\u0647`;
+      await send(chatId, t, {
+        reply_markup: { inline_keyboard: [[{ text: '\ud83e\udd2c \u0645\u0634\u0627\u0647\u062f\u0647 \u0644\u06cc\u0633\u062a', callback_data: 'bw:list:0' }]] },
+      });
+      return;
+    }
+
+    if (base === '/delword') {
+      if (!rest) {
+        await send(chatId, '\u274c \u06a9\u0644\u0645\u0647\u200c\u0627\u06cc \u0646\u0646\u0648\u0634\u062a\u06cc\u062f.\n\n<b>\u0645\u062b\u0627\u0644:</b> <code>/delword \u0627\u062d\u0645\u0642</code>');
+        return;
+      }
+      const ok = await removeBadWord(rest);
+      const total = (await getBadWords(true)).length;
+      await send(
+        chatId,
+        ok
+          ? `\u2705 \u00ab${esc(rest)}\u00bb \u062d\u0630\u0641 \u0634\u062f.\n\n\ud83d\udcca \u0645\u062c\u0645\u0648\u0639: ${total} \u06a9\u0644\u0645\u0647`
+          : `\u26a0\ufe0f \u00ab${esc(rest)}\u00bb \u062f\u0631 \u0644\u06cc\u0633\u062a \u0646\u0628\u0648\u062f.\n\n\ud83d\udca1 \u0627\u0645\u0644\u0627 \u0631\u0627 \u062f\u0642\u06cc\u0642 \u0628\u0646\u0648\u06cc\u0633\u06cc\u062f \u06cc\u0627 \u0627\u0632 \u062f\u06a9\u0645\u0647\u200c\u0647\u0627\u06cc \ud83d\uddd1 \u062f\u0631 \u0644\u06cc\u0633\u062a \u0627\u0633\u062a\u0641\u0627\u062f\u0647 \u06a9\u0646\u06cc\u062f.`,
+        { reply_markup: { inline_keyboard: [[{ text: '\ud83e\udd2c \u0645\u0634\u0627\u0647\u062f\u0647 \u0644\u06cc\u0633\u062a', callback_data: 'bw:list:0' }]] } }
+      );
+      return;
+    }
+
+    if (base === '/listwords') {
+      const words = await getBadWords(true);
+      const v = buildWordsView(words, 0);
+      await send(chatId, v.text, { reply_markup: v.keyboard });
+      return;
+    }
+
+    if (base === '/testword') {
+      if (!rest) {
+        await send(chatId, '\u274c \u0645\u062a\u0646\u06cc \u0646\u0646\u0648\u0634\u062a\u06cc\u062f.\n\n<b>\u0645\u062b\u0627\u0644:</b> <code>/testword \u0627\u06cc\u0646 \u06cc\u06a9 \u062c\u0645\u0644\u0647 \u0627\u0633\u062a</code>');
+        return;
+      }
+      const words = await getBadWords();
+      const hit = matchBadWord(rest, words);
+      const link = hasLink(rest, {});
+      await send(
+        chatId,
+        `\ud83e\uddea <b>\u0646\u062a\u06cc\u062c\u0647 \u062a\u0633\u062a</b>\n\n` +
+          `\ud83d\udcdd \u0645\u062a\u0646: ${esc(rest.slice(0, 200))}\n\n` +
+          `${hit ? `\ud83e\udd2c \u06a9\u0644\u0645\u0647 \u0645\u0645\u0646\u0648\u0639\u0647: <b>${esc(hit)}</b> \u2190 \u062d\u0630\u0641 \u0645\u06cc\u200c\u0634\u0648\u062f` : '\u2705 \u06a9\u0644\u0645\u0647 \u0645\u0645\u0646\u0648\u0639\u0647 \u0646\u062f\u0627\u0631\u062f'}\n` +
+          `${link ? '\ud83d\udd17 \u0644\u06cc\u0646\u06a9/\u0645\u0646\u0634\u0646 \u062f\u0627\u0631\u062f \u2190 \u062d\u0630\u0641 \u0645\u06cc\u200c\u0634\u0648\u062f' : '\u2705 \u0644\u06cc\u0646\u06a9 \u0646\u062f\u0627\u0631\u062f'}\n\n` +
+          `<b>\u0646\u062a\u06cc\u062c\u0647:</b> ${hit || link ? '\ud83d\uddd1 \u0627\u06cc\u0646 \u067e\u06cc\u0627\u0645 \u062d\u0630\u0641 \u0645\u06cc\u200c\u0634\u062f' : '\u2705 \u0627\u06cc\u0646 \u067e\u06cc\u0627\u0645 \u0645\u062c\u0627\u0632 \u0627\u0633\u062a'}`
+      );
+      return;
+    }
+  }
+
   if (isAdmin && base === '/id') {
     const t = await resolveTarget(msg, arg);
     await send(
@@ -837,6 +1121,9 @@ async function handleMessage(msg, { edited = false } = {}) {
         '\u2022 <code>/bl \u0622\u06cc\u062f\u06cc|@username</code> \u2190 \u0627\u0641\u0632\u0648\u062f\u0646 \u0628\u0647 \u0628\u0644\u06a9\u200c\u0644\u06cc\u0633\u062a\n' +
         '\u2022 <code>/unbl \u0622\u06cc\u062f\u06cc|@username</code> \u2190 \u062d\u0630\u0641 \u0627\u0632 \u0628\u0644\u06a9\u200c\u0644\u06cc\u0633\u062a\n' +
         '\u2022 <code>/wl</code> \u0648 <code>/unwl</code> \u2190 \u0648\u0627\u06cc\u062a\u200c\u0644\u06cc\u0633\u062a\n' +
+        '\u2022 <code>/addword \u06a9\u0644\u0645\u0647</code> \u2190 \u06a9\u0644\u0645\u0647 \u0645\u0645\u0646\u0648\u0639\u0647\n' +
+        '\u2022 <code>/delword \u06a9\u0644\u0645\u0647</code> \u2190 \u062d\u0630\u0641 \u06a9\u0644\u0645\u0647\n' +
+        '\u2022 <code>/testword \u0645\u062a\u0646</code> \u2190 \u062a\u0633\u062a \u0641\u06cc\u0644\u062a\u0631\n' +
         '\u2022 \u0631\u06cc\u067e\u0644\u0627\u06cc \u0631\u0648\u06cc \u067e\u06cc\u0627\u0645 + <code>/bl</code> \u062f\u0631 \u06af\u0631\u0648\u0647\n' +
         '\u2022 <code>/id</code> \u2190 \u0646\u0645\u0627\u06cc\u0634 \u0634\u0646\u0627\u0633\u0647\u200c\u0647\u0627\n\n' +
         '\u26a0\ufe0f \u0628\u0644\u06a9\u200c\u0644\u06cc\u0633\u062a \u0628\u0631\u0627\u06cc \u0647\u0645\u0647 \u0627\u0639\u0645\u0627\u0644 \u0645\u06cc\u200c\u0634\u0648\u062f (\u062d\u062a\u06cc \u0627\u062f\u0645\u06cc\u0646\u200c\u0647\u0627).\n\n';
@@ -918,7 +1205,7 @@ module.exports = async function handler(req, res) {
   if (!update || typeof update !== 'object') return res.status(200).send('OK');
 
   try {
-    // skip updates already processed (Telegram retries)
+    // skip updates already processed
     if (update.update_id !== undefined && kvReady()) {
       const fresh = await kv(['SET', `upd:${update.update_id}`, '1', 'NX', 'EX', DEDUP_TTL]);
       if (!fresh) {
@@ -932,7 +1219,7 @@ module.exports = async function handler(req, res) {
     else if (update.message) await handleMessage(update.message);
     else if (update.edited_message) await handleMessage(update.edited_message, { edited: true });
   } catch (e) {
-    // never return 500, otherwise Telegram retries forever
+    // never return 500 or Telegram retries forever
     console.error('\ud83d\udca5 handler error:', e);
   }
 
@@ -942,10 +1229,13 @@ module.exports = async function handler(req, res) {
 // exported for local testing
 module.exports.__test = {
   hasBadWord,
+  matchBadWord,
   hasLink,
   normalizeFa,
   getForwardSource,
   extractText,
   buildListView,
+  buildWordsView,
   hashText,
+  DEFAULT_BAD_WORDS,
 };
